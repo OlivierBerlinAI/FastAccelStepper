@@ -25,6 +25,10 @@ class FastAccelStepper {
     this._currentSpeedHz = 0;        // Current speed in steps/second
     this._direction = 0;             // 0 = stopped, 1 = forward, -1 = backward
 
+    // Direction pin configuration
+    this._directionPinDefined = false;
+    this._dirHighCountsUp = true;    // If true, HIGH on dir pin means count up
+
     // Target state
     this._targetDirection = 0;       // Target direction (1 or -1)
     this._isRunning = false;         // Is the motor running?
@@ -66,6 +70,38 @@ class FastAccelStepper {
     }
     this._acceleration = acceleration;
     return 0;
+  }
+
+  /**
+   * Configure direction pin behavior (for simulation only - no actual pin control)
+   * @param {number} dirPin - Direction pin number (ignored in simulation)
+   * @param {boolean} dirHighCountsUp - If true, HIGH means forward/count up
+   */
+  setDirectionPin(dirPin, dirHighCountsUp = true) {
+    this._directionPinDefined = true;
+    this._dirHighCountsUp = dirHighCountsUp;
+  }
+
+  /**
+   * Set the current position without moving
+   * @param {number} position - New position value
+   */
+  setCurrentPosition(position) {
+    this._update();
+    this._position = position;
+    if (this._targetPosition !== null) {
+      // Adjust target position to maintain relative movement
+      const relativeMove = this._targetPosition - this._position;
+      this._targetPosition = position + relativeMove;
+    }
+  }
+
+  /**
+   * Get the configured speed in milliHz (not current speed, but set speed)
+   * @returns {number} Configured speed in milliHz
+   */
+  getSpeedInMilliHz() {
+    return Math.round(this._maxSpeedHz * 1000);
   }
 
   /**
@@ -130,6 +166,35 @@ class FastAccelStepper {
 
     // Calculate target position
     this._targetPosition = this._position + steps;
+    this._targetDirection = steps > 0 ? 1 : -1;
+    this._isRunning = true;
+    this._lastUpdateTime = performance.now();
+    return 0;
+  }
+
+  /**
+   * Move to an absolute position
+   * @param {number} position - Target position in steps
+   */
+  moveTo(position) {
+    if (this._maxSpeedHz === 0) {
+      console.warn('Speed not set');
+      return -1;
+    }
+    if (this._acceleration === 0) {
+      console.warn('Acceleration not set');
+      return -1;
+    }
+
+    // Update current position first
+    this._update();
+
+    const steps = position - this._position;
+    if (steps === 0) {
+      return 0;
+    }
+
+    this._targetPosition = position;
     this._targetDirection = steps > 0 ? 1 : -1;
     this._isRunning = true;
     this._lastUpdateTime = performance.now();
@@ -347,6 +412,20 @@ class FastAccelStepper {
    */
   targetPos() {
     return this._targetPosition;
+  }
+
+  /**
+   * Get the position after all commands are completed
+   * For position-based moves, returns the target position
+   * For continuous running or idle, returns current position
+   * @returns {number} Future position in steps
+   */
+  getPositionAfterCommandsCompleted() {
+    this._update();
+    if (this._targetPosition !== null) {
+      return Math.round(this._targetPosition);
+    }
+    return Math.round(this._position);
   }
 }
 

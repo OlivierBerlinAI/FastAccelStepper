@@ -66,6 +66,22 @@ Set the acceleration in steps/s².
 - **Parameters:** `acceleration` - Acceleration in steps/s²
 - **Returns:** `0` on success, `-1` on error
 
+#### `setDirectionPin(dirPin, dirHighCountsUp)`
+Configure direction pin behavior (for simulation only - no actual pin control).
+- **Parameters:**
+  - `dirPin` - Direction pin number (ignored in simulation)
+  - `dirHighCountsUp` - If true, HIGH means forward/count up (default: true)
+- **Note:** In simulation, this doesn't control hardware but can be used to invert direction logic
+
+#### `setCurrentPosition(position)`
+Set the current position without moving the motor.
+- **Parameters:** `position` - New position value
+- **Note:** If a move is in progress, adjusts the target to maintain relative movement
+
+#### `getSpeedInMilliHz()`
+Get the configured maximum speed (not the current speed).
+- **Returns:** Configured speed in milliHz (steps per 1000 seconds)
+
 ### Motion Control Methods
 
 #### `runForward()`
@@ -81,6 +97,12 @@ Move a relative number of steps from the current position. The motor will accele
 - **Parameters:** `steps` - Number of steps to move (positive=forward, negative=backward)
 - **Returns:** `0` on success, `-1` on error
 - **Example:** `stepper.move(1000)` moves 1000 steps forward
+
+#### `moveTo(position)`
+Move to an absolute position. The motor will accelerate, optionally coast, then decelerate to stop exactly at the target position.
+- **Parameters:** `position` - Target position in steps
+- **Returns:** `0` on success, `-1` on error
+- **Example:** `stepper.moveTo(5000)` moves to absolute position 5000
 
 #### `stopMove()`
 Stop the motor with deceleration.
@@ -115,11 +137,21 @@ Get the current motion state.
 Get the target position for the current move operation.
 - **Returns:** Target position (number) if a move is in progress, `null` if running continuously or idle
 
+#### `getPositionAfterCommandsCompleted()`
+Get the position where the stepper will be after all current commands are completed.
+- **Returns:** Future position in steps
+- **Note:** For position-based moves (move/moveTo), returns the target position. For continuous running or idle, returns current position
+
 ## Examples
 
 See the included example files:
-- **example.js** - Node.js/console example with detailed output
-- **example.html** - Interactive browser demo with visualization
+- **example.js** - Node.js/console example with detailed output showing move() commands
+- **example.html** - Interactive browser demo with dual steppers showing:
+  - Two steppers with different direction pin configurations
+  - Stepper 1: Normal direction (dirHighCountsUp = true)
+  - Stepper 2: Inverted direction (dirHighCountsUp = false)
+  - Visual demonstration of both relative (move) and absolute (moveTo) positioning
+  - Real-time position, speed, and acceleration display
 
 ### Running the Examples
 
@@ -167,20 +199,21 @@ Perfect for:
 
 ## Limitations
 
-- No support for `moveTo()` for absolute positioning (coming soon)
-- No direction pin emulation
-- No enable pin emulation
+- No hardware pin control (simulation only)
+- No enable pin functionality
 - Timing accuracy depends on JavaScript's event loop and timer resolution
-- No linear acceleration (cubic acceleration) support yet
+- No linear acceleration (cubic jerk) support yet
+- No command queue like the C++ version (motion is calculated in real-time)
 
 ## Future Enhancements
 
 Potential additions:
-- `moveTo(position)` - Move to absolute position
-- `setCurrentPosition(pos)` - Set current position
-- Position limits
-- Multiple stepper coordination
+- Enable pin simulation
+- Position limits and soft stops
+- Multiple stepper coordination with synchronized movement
 - Linear acceleration (cubic jerk) support
+- Move queue for planning multiple moves in advance
+- Event callbacks (onMoveComplete, onTargetReached, etc.)
 
 ## License
 
