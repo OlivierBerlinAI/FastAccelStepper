@@ -321,7 +321,14 @@ class FastAccelStepper {
     // Update position based on average speed during this interval
     // Use trapezoidal integration for better accuracy
     const avgSpeedHz = (currentSignedSpeed + this._currentSpeedHz * this._direction) / 2;
-    const deltaSteps = avgSpeedHz * deltaTime;
+    let deltaSteps = avgSpeedHz * deltaTime;
+
+    // Apply direction pin inversion if configured
+    // When dirHighCountsUp is false, invert the position change
+    if (!this._dirHighCountsUp) {
+      deltaSteps = -deltaSteps;
+    }
+
     const newPosition = this._position + deltaSteps;
 
     // If we have a target position, don't overshoot it
