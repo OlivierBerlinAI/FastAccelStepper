@@ -76,10 +76,20 @@ class FastAccelStepper {
    * Configure direction pin behavior (for simulation only - no actual pin control)
    * @param {number} dirPin - Direction pin number (ignored in simulation)
    * @param {boolean} dirHighCountsUp - If true, HIGH means forward/count up
+   * @note In this simulation, dirHighCountsUp only affects visual/physical interpretation.
+   *       Position coordinates always work the same way for consistent coordinate systems.
    */
   setDirectionPin(dirPin, dirHighCountsUp = true) {
     this._directionPinDefined = true;
     this._dirHighCountsUp = dirHighCountsUp;
+  }
+
+  /**
+   * Get the direction pin configuration
+   * @returns {boolean} True if HIGH means forward, false if HIGH means backward
+   */
+  getDirectionPinConfig() {
+    return this._dirHighCountsUp;
   }
 
   /**
@@ -321,14 +331,11 @@ class FastAccelStepper {
     // Update position based on average speed during this interval
     // Use trapezoidal integration for better accuracy
     const avgSpeedHz = (currentSignedSpeed + this._currentSpeedHz * this._direction) / 2;
-    let deltaSteps = avgSpeedHz * deltaTime;
+    const deltaSteps = avgSpeedHz * deltaTime;
 
-    // Apply direction pin inversion if configured
-    // When dirHighCountsUp is false, invert the position change
-    if (!this._dirHighCountsUp) {
-      deltaSteps = -deltaSteps;
-    }
-
+    // Note: dirHighCountsUp affects physical motor direction, not position counting
+    // Position coordinates always work the same way regardless of direction pin setting
+    // This allows consistent coordinate systems across multiple steppers
     const newPosition = this._position + deltaSteps;
 
     // If we have a target position, don't overshoot it

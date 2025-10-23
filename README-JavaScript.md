@@ -71,7 +71,11 @@ Configure direction pin behavior (for simulation only - no actual pin control).
 - **Parameters:**
   - `dirPin` - Direction pin number (ignored in simulation)
   - `dirHighCountsUp` - If true, HIGH means forward/count up (default: true)
-- **Note:** In simulation, this doesn't control hardware but can be used to invert direction logic
+- **Note:** This affects visual/physical interpretation, NOT position coordinates. Position values always work the same way across all steppers, ensuring consistent coordinate systems. This is essential for multi-stepper systems like polargraphs where motors are physically mirrored but need to share a common coordinate system.
+
+#### `getDirectionPinConfig()`
+Get the current direction pin configuration.
+- **Returns:** `true` if HIGH means forward, `false` if HIGH means backward
 
 #### `setCurrentPosition(position)`
 Set the current position without moving the motor.

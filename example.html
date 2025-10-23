@@ -131,7 +131,11 @@
         • Stepper 1: Normal direction (dirHighCountsUp = true)<br>
         • Stepper 2: Inverted direction (dirHighCountsUp = false)<br>
         <br>
-        When both steppers move "forward", they move in opposite directions!
+        <strong>How it works:</strong><br>
+        • Both steppers use the same position coordinate system (0, 1000, 2000, etc.)<br>
+        • The visualization shows stepper 2 moving in the opposite physical direction<br>
+        • Try "Move 1000" on both - they both reach position 1000, but move opposite ways!<br>
+        • Perfect for polargraphs where motors are physically mirrored
     </div>
 
     <div class="controls">
@@ -288,7 +292,15 @@
             const container = visual.parentElement;
             const centerX = container.offsetWidth / 2;
             const scale = 0.1; // pixels per step
-            const x = centerX + (position * scale);
+
+            // Invert visual position if direction pin is inverted
+            // This shows the physical direction while keeping position coordinates consistent
+            let visualPosition = position;
+            if (!stepper.getDirectionPinConfig()) {
+                visualPosition = -position;  // Invert for visualization only
+            }
+
+            const x = centerX + (visualPosition * scale);
             visual.style.left = Math.max(0, Math.min(container.offsetWidth - 20, x)) + 'px';
         }
 
