@@ -1,0 +1,184 @@
+# FastAccelStepper.js
+
+A JavaScript port of FastAccelStepper for virtual/simulated stepper motor control. This implementation focuses on motion planning and simulation without hardware control, making it ideal for virtual polargraph projects and motion simulation.
+
+## Features
+
+- Time-based position simulation
+- Realistic acceleration and deceleration
+- Simple API matching the original FastAccelStepper
+- Works in both Node.js and browser environments
+- No dependencies
+
+## Quick Start
+
+### Browser Usage
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="FastAccelStepper.js"></script>
+</head>
+<body>
+    <script>
+        const stepper = new FastAccelStepper();
+        stepper.setSpeedInHz(1000);
+        stepper.setAcceleration(500);
+        stepper.runForward();
+
+        // Poll position
+        setInterval(() => {
+            console.log('Position:', stepper.getCurrentPosition());
+        }, 100);
+    </script>
+</body>
+</html>
+```
+
+### Node.js Usage
+
+```javascript
+const FastAccelStepper = require('./FastAccelStepper.js');
+
+const stepper = new FastAccelStepper();
+stepper.setSpeedInHz(1000);
+stepper.setAcceleration(500);
+stepper.runForward();
+
+// Poll position
+setInterval(() => {
+    console.log('Position:', stepper.getCurrentPosition());
+}, 100);
+```
+
+## API Reference
+
+### Configuration Methods
+
+#### `setSpeedInHz(speedHz)`
+Set the maximum speed in steps per second.
+- **Parameters:** `speedHz` - Speed in Hz (steps/second)
+- **Returns:** `0` on success, `-1` on error
+
+#### `setAcceleration(acceleration)`
+Set the acceleration in steps/s².
+- **Parameters:** `acceleration` - Acceleration in steps/s²
+- **Returns:** `0` on success, `-1` on error
+
+### Motion Control Methods
+
+#### `runForward()`
+Start running forward continuously at the configured speed.
+- **Returns:** `0` on success, `-1` on error
+
+#### `runBackward()`
+Start running backward continuously at the configured speed.
+- **Returns:** `0` on success, `-1` on error
+
+#### `stopMove()`
+Stop the motor with deceleration.
+
+### Query Methods
+
+#### `getCurrentPosition()`
+Get the current simulated position in steps.
+- **Returns:** Current position (integer)
+
+#### `getCurrentSpeedInMilliHz()`
+Get the current speed in milliHz (steps per 1000 seconds).
+- **Returns:** Current speed in milliHz (signed: positive=forward, negative=backward)
+
+#### `getCurrentAcceleration()`
+Get the current acceleration in steps/s².
+- **Returns:** Current acceleration (signed: positive=accelerating forward, negative=decelerating)
+
+#### `isRunning()`
+Check if the motor is currently moving.
+- **Returns:** `true` if running, `false` if stopped
+
+#### `getRampState()`
+Get the current motion state.
+- **Returns:** State constant:
+  - `0` - IDLE
+  - `1` - ACCELERATE
+  - `2` - COAST
+  - `3` - DECELERATE
+
+## Examples
+
+See the included example files:
+- **example.js** - Node.js/console example with detailed output
+- **example.html** - Interactive browser demo with visualization
+
+### Running the Examples
+
+**Node.js:**
+```bash
+node example.js
+```
+
+**Browser:**
+Open `example.html` in a web browser.
+
+## How It Works
+
+The implementation uses time-based simulation:
+
+1. **Position Tracking:** Position is calculated based on elapsed time and current speed
+2. **Acceleration:** Speed changes over time according to the configured acceleration
+3. **State Machine:** Tracks whether the motor is accelerating, coasting, or decelerating
+4. **Continuous Updates:** Each call to query methods (position, speed, etc.) triggers an internal update based on elapsed time
+
+### Implementation Details
+
+- Uses `performance.now()` for high-resolution timing
+- Trapezoidal integration for accurate position calculation during acceleration
+- No dependencies on hardware or external libraries
+- Lightweight (~200 lines of code)
+
+## Differences from C++ Version
+
+This JavaScript implementation is simplified for simulation:
+
+- **No hardware control** - No pin management, timers, or interrupts
+- **Continuous motion only** - Only `runForward()`/`runBackward()` implemented (no `moveTo()` or `move()` for specific distances yet)
+- **Time-based simulation** - Position is calculated from elapsed time, not step-by-step
+- **No command queue** - The C++ version uses a command queue for hardware timing; this version simulates continuously
+
+## Use Cases
+
+Perfect for:
+- Virtual polargraph simulation
+- Motion planning visualization
+- Testing control algorithms without hardware
+- Educational purposes
+- Prototyping motion control applications
+
+## Limitations
+
+- No support for `moveTo()` or `move()` to specific positions (coming soon)
+- No direction pin emulation
+- No enable pin emulation
+- Timing accuracy depends on JavaScript's event loop and timer resolution
+
+## Future Enhancements
+
+Potential additions:
+- `moveTo(position)` - Move to absolute position
+- `move(steps)` - Move relative distance
+- Position limits
+- Multiple stepper coordination
+- Linear acceleration support
+
+## License
+
+This JavaScript port follows the same licensing as the original FastAccelStepper library.
+
+## Original Project
+
+Based on [FastAccelStepper](https://github.com/gin66/FastAccelStepper) by gin66.
+
+## Contributing
+
+Feel free to submit issues or pull requests for improvements!
