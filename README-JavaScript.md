@@ -76,6 +76,12 @@ Start running forward continuously at the configured speed.
 Start running backward continuously at the configured speed.
 - **Returns:** `0` on success, `-1` on error
 
+#### `move(steps)`
+Move a relative number of steps from the current position. The motor will accelerate, optionally coast, then decelerate to stop exactly at the target position.
+- **Parameters:** `steps` - Number of steps to move (positive=forward, negative=backward)
+- **Returns:** `0` on success, `-1` on error
+- **Example:** `stepper.move(1000)` moves 1000 steps forward
+
 #### `stopMove()`
 Stop the motor with deceleration.
 
@@ -104,6 +110,10 @@ Get the current motion state.
   - `1` - ACCELERATE
   - `2` - COAST
   - `3` - DECELERATE
+
+#### `targetPos()`
+Get the target position for the current move operation.
+- **Returns:** Target position (number) if a move is in progress, `null` if running continuously or idle
 
 ## Examples
 
@@ -142,9 +152,9 @@ The implementation uses time-based simulation:
 This JavaScript implementation is simplified for simulation:
 
 - **No hardware control** - No pin management, timers, or interrupts
-- **Continuous motion only** - Only `runForward()`/`runBackward()` implemented (no `moveTo()` or `move()` for specific distances yet)
 - **Time-based simulation** - Position is calculated from elapsed time, not step-by-step
 - **No command queue** - The C++ version uses a command queue for hardware timing; this version simulates continuously
+- **Simplified motion planning** - Uses basic trapezoidal motion profiles without the advanced optimization of the C++ version
 
 ## Use Cases
 
@@ -157,19 +167,20 @@ Perfect for:
 
 ## Limitations
 
-- No support for `moveTo()` or `move()` to specific positions (coming soon)
+- No support for `moveTo()` for absolute positioning (coming soon)
 - No direction pin emulation
 - No enable pin emulation
 - Timing accuracy depends on JavaScript's event loop and timer resolution
+- No linear acceleration (cubic acceleration) support yet
 
 ## Future Enhancements
 
 Potential additions:
 - `moveTo(position)` - Move to absolute position
-- `move(steps)` - Move relative distance
+- `setCurrentPosition(pos)` - Set current position
 - Position limits
 - Multiple stepper coordination
-- Linear acceleration support
+- Linear acceleration (cubic jerk) support
 
 ## License
 

@@ -113,6 +113,11 @@
         <button onclick="runBackward()">Run Backward</button>
         <button onclick="stopMotor()">Stop</button>
         <button onclick="resetPosition()">Reset Position</button>
+        <div style="margin-top: 15px;">
+            <label>Move Steps:</label>
+            <input type="number" id="moveSteps" value="1000" style="width: 100px;">
+            <button onclick="moveSteps()">Move</button>
+        </div>
     </div>
 
     <div class="visualization">
@@ -198,6 +203,12 @@
         function runBackward() {
             stepper.runBackward();
             console.log('Running backward');
+        }
+
+        function moveSteps() {
+            const steps = parseInt(document.getElementById('moveSteps').value);
+            stepper.move(steps);
+            console.log(`Moving ${steps} steps`);
         }
 
         function stopMotor() {

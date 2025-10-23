@@ -52,13 +52,17 @@ async function runExample() {
   stepper.stopMove();
   await pollPosition(2000, 100);
 
-  console.log('\nExample 3: Running backward...');
-  stepper.runBackward();
-  await pollPosition(2000, 100);
+  console.log('\nExample 3: Move 1000 steps forward...');
+  stepper.move(1000);
+  await pollPosition(4000, 100);
 
-  console.log('\nExample 4: Stopping again...');
-  stepper.stopMove();
-  await pollPosition(2000, 100);
+  console.log('\nExample 4: Move 2000 steps backward...');
+  stepper.move(-2000);
+  await pollPosition(5000, 100);
+
+  console.log('\nExample 5: Move 500 steps forward...');
+  stepper.move(500);
+  await pollPosition(3000, 100);
 
   console.log('\nExample complete!');
   console.log(`Final position: ${stepper.getCurrentPosition()} steps`);

@@ -28,6 +28,7 @@ class FastAccelStepper {
     // Target state
     this._targetDirection = 0;       // Target direction (1 or -1)
     this._isRunning = false;         // Is the motor running?
+    this._targetPosition = null;     // Target position for move() command (null = continuous)
 
     // Timing
     this._lastUpdateTime = null;     // Last time we updated position
@@ -81,6 +82,7 @@ class FastAccelStepper {
     }
 
     this._targetDirection = 1;
+    this._targetPosition = null;  // Continuous movement
     this._isRunning = true;
     this._lastUpdateTime = performance.now();
     return 0;
@@ -100,6 +102,35 @@ class FastAccelStepper {
     }
 
     this._targetDirection = -1;
+    this._targetPosition = null;  // Continuous movement
+    this._isRunning = true;
+    this._lastUpdateTime = performance.now();
+    return 0;
+  }
+
+  /**
+   * Move a relative number of steps from current position
+   * @param {number} steps - Number of steps to move (positive=forward, negative=backward)
+   */
+  move(steps) {
+    if (this._maxSpeedHz === 0) {
+      console.warn('Speed not set');
+      return -1;
+    }
+    if (this._acceleration === 0) {
+      console.warn('Acceleration not set');
+      return -1;
+    }
+    if (steps === 0) {
+      return 0;
+    }
+
+    // Update current position first
+    this._update();
+
+    // Calculate target position
+    this._targetPosition = this._position + steps;
+    this._targetDirection = steps > 0 ? 1 : -1;
     this._isRunning = true;
     this._lastUpdateTime = performance.now();
     return 0;
@@ -110,6 +141,7 @@ class FastAccelStepper {
    */
   stopMove() {
     this._isRunning = false;
+    this._targetPosition = null;
   }
 
   /**
@@ -140,11 +172,52 @@ class FastAccelStepper {
       return;
     }
 
-    // Determine if we need to accelerate or decelerate
-    const targetSpeedHz = this._isRunning ?
-      this._maxSpeedHz * this._targetDirection : 0;
-
     const currentSignedSpeed = this._currentSpeedHz * this._direction;
+
+    // Determine target speed based on whether we have a target position
+    let targetSpeedHz;
+
+    if (this._targetPosition !== null) {
+      // Position-based movement
+      const distanceRemaining = this._targetPosition - this._position;
+      const distanceRemainingAbs = Math.abs(distanceRemaining);
+
+      // Calculate deceleration distance needed from current speed
+      // Using: d = v² / (2*a)
+      const decelDistance = (this._currentSpeedHz * this._currentSpeedHz) / (2 * this._acceleration);
+
+      // Check if we've reached target
+      if (distanceRemainingAbs < 0.5) {
+        // Reached target
+        this._position = this._targetPosition;
+        this._currentSpeedHz = 0;
+        this._direction = 0;
+        this._isRunning = false;
+        this._rampState = this.RAMP_STATE_IDLE;
+        this._targetPosition = null;
+        return;
+      }
+
+      // Check if we need to start decelerating
+      const distanceDirection = Math.sign(distanceRemaining);
+      const movingInCorrectDirection = (this._direction === distanceDirection || this._direction === 0);
+
+      if (!movingInCorrectDirection) {
+        // Moving in wrong direction, need to stop and reverse
+        targetSpeedHz = 0;
+      } else if (decelDistance >= distanceRemainingAbs * 0.95) {
+        // Need to decelerate now
+        targetSpeedHz = 0;
+      } else {
+        // Can still accelerate or coast
+        targetSpeedHz = this._maxSpeedHz * distanceDirection;
+      }
+    } else {
+      // Continuous movement
+      targetSpeedHz = this._isRunning ?
+        this._maxSpeedHz * this._targetDirection : 0;
+    }
+
     const speedDiff = targetSpeedHz - currentSignedSpeed;
 
     // Calculate acceleration direction
@@ -173,7 +246,7 @@ class FastAccelStepper {
       this._currentSpeedHz = Math.abs(newSignedSpeed);
       this._direction = newSignedSpeed === 0 ? 0 : Math.sign(newSignedSpeed);
 
-      if (!this._isRunning || Math.abs(targetSpeedHz) < this._currentSpeedHz) {
+      if (targetSpeedHz === 0 || Math.abs(targetSpeedHz) < this._currentSpeedHz) {
         this._rampState = this.RAMP_STATE_DECELERATE;
       } else {
         this._rampState = this.RAMP_STATE_ACCELERATE;
@@ -184,7 +257,25 @@ class FastAccelStepper {
     // Use trapezoidal integration for better accuracy
     const avgSpeedHz = (currentSignedSpeed + this._currentSpeedHz * this._direction) / 2;
     const deltaSteps = avgSpeedHz * deltaTime;
-    this._position += deltaSteps;
+    const newPosition = this._position + deltaSteps;
+
+    // If we have a target position, don't overshoot it
+    if (this._targetPosition !== null) {
+      const passedTarget = (this._direction > 0 && newPosition >= this._targetPosition) ||
+                          (this._direction < 0 && newPosition <= this._targetPosition);
+
+      if (passedTarget) {
+        this._position = this._targetPosition;
+        this._currentSpeedHz = 0;
+        this._direction = 0;
+        this._isRunning = false;
+        this._rampState = this.RAMP_STATE_IDLE;
+        this._targetPosition = null;
+        return;
+      }
+    }
+
+    this._position = newPosition;
   }
 
   /**
@@ -247,6 +338,15 @@ class FastAccelStepper {
   getRampState() {
     this._update();
     return this._rampState;
+  }
+
+  /**
+   * Get the target position for the current move
+   * Returns null if running continuously or idle
+   * @returns {number|null} Target position or null
+   */
+  targetPos() {
+    return this._targetPosition;
   }
 }
 
