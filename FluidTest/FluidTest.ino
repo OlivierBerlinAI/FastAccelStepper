@@ -23,8 +23,10 @@
 #define RIGHT_DIR_PIN 2
 #define RIGHT_ENABLE_PIN 15  // Optional, set to -1 if not used
 
-// Enable pin logic - set to true if your driver needs LOW to enable
-#define INVERT_ENABLE_PIN false
+// Enable pin logic - set to true if your driver needs LOW to enable (most common)
+// Most stepper drivers (A4988, DRV8825, TMC2208) use LOW to enable
+// Set to false if your driver needs HIGH to enable (less common)
+#define LOW_ACTIVE_ENABLE true
 
 // Tick multiplier - increase this if your ticks are too low
 // ESP32 MIN_CMD_TICKS = 3200, so multiply ticks to meet this requirement
@@ -536,8 +538,7 @@ void setup() {
   if (leftStepper) {
     leftStepper->setDirectionPin(LEFT_DIR_PIN);
     if (LEFT_ENABLE_PIN >= 0) {
-      leftStepper->setEnablePin(LEFT_ENABLE_PIN);
-      leftStepper->setEnablePinInverted(INVERT_ENABLE_PIN);
+      leftStepper->setEnablePin(LEFT_ENABLE_PIN, LOW_ACTIVE_ENABLE);
       leftStepper->setAutoEnable(true);
       leftStepper->enableOutputs();
     }
@@ -554,8 +555,7 @@ void setup() {
   if (rightStepper) {
     rightStepper->setDirectionPin(RIGHT_DIR_PIN);
     if (RIGHT_ENABLE_PIN >= 0) {
-      rightStepper->setEnablePin(RIGHT_ENABLE_PIN);
-      rightStepper->setEnablePinInverted(INVERT_ENABLE_PIN);
+      rightStepper->setEnablePin(RIGHT_ENABLE_PIN, LOW_ACTIVE_ENABLE);
       rightStepper->setAutoEnable(true);
       rightStepper->enableOutputs();
     }
@@ -572,8 +572,8 @@ void setup() {
   Serial.println(MIN_CMD_TICKS);
   Serial.print("TICK_MULTIPLIER: ");
   Serial.println(TICK_MULTIPLIER);
-  Serial.print("Enable pin inverted: ");
-  Serial.println(INVERT_ENABLE_PIN ? "YES" : "NO");
+  Serial.print("Enable pin logic: ");
+  Serial.println(LOW_ACTIVE_ENABLE ? "LOW to enable (common)" : "HIGH to enable");
   Serial.print("Path length: ");
   Serial.print(pathLength);
   Serial.println(" segments");

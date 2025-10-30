@@ -22,10 +22,10 @@ You can modify these pins in the `FluidTest.ino` file to match your hardware.
 
 ### Important Settings at the top of FluidTest.ino:
 
-**INVERT_ENABLE_PIN** (default: `false`)
-- Set to `true` if your stepper driver requires LOW signal to enable
-- Common drivers like A4988, DRV8825 typically need `false` (HIGH to enable)
-- Some drivers may need `true` (LOW to enable)
+**LOW_ACTIVE_ENABLE** (default: `true`)
+- Set to `true` if your stepper driver requires LOW signal to enable (most common)
+- Common drivers like A4988, DRV8825, TMC2208 use `true` (LOW to enable)
+- Set to `false` if your driver needs HIGH to enable (less common)
 - If motors don't move, try toggling this setting
 
 **TICK_MULTIPLIER** (default: `50`)
@@ -41,8 +41,9 @@ You can modify these pins in the `FluidTest.ino` file to match your hardware.
 
 1. **If motors don't move at all:**
    - Check wiring and power supply
-   - Try setting `INVERT_ENABLE_PIN true`
+   - Try toggling `LOW_ACTIVE_ENABLE` (change `true` to `false` or vice versa)
    - Verify enable pins are connected correctly
+   - Most drivers (A4988, DRV8825, TMC2208) need `LOW_ACTIVE_ENABLE true`
 
 2. **If you see "Command may be rejected" warnings:**
    - Increase `TICK_MULTIPLIER` (try 60, 70, 100, etc.)
@@ -139,7 +140,9 @@ This shows:
 **Issue: Steppers not moving**
 - Check wiring and power supply to stepper drivers
 - Verify pin definitions match your hardware
-- **Try setting `INVERT_ENABLE_PIN true`** - this is the most common issue
+- **Try toggling `LOW_ACTIVE_ENABLE`** - this is the most common issue
+  - Most common drivers need `LOW_ACTIVE_ENABLE true` (default)
+  - If still not working, try `LOW_ACTIVE_ENABLE false`
 - Manually set enable pins LOW/HIGH to test driver
 - Check serial output for error messages
 
