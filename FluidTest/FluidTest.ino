@@ -515,7 +515,7 @@ void setup() {
   Serial.println("FluidTest - Queue Instructions Test");
   Serial.println("====================================");
 
-  pinMode(MOTOR_ENABLED, OUTPUT);
+  pinMode(LEFT_ENABLE_PIN, OUTPUT);
   pinMode(MOTOR_MS1, OUTPUT);
   pinMode(MOTOR_MS2, OUTPUT);
 
