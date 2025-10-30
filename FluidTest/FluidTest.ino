@@ -214,33 +214,15 @@ void executeTracedPath() {
         .steps = rightSteps,
         .count_up = tracedPath[i].rightSteps >= 0};
 
-    // Wait for left queue to have space if queues are running
-    if (queuesStarted) {
-      while (leftStepper->queueEntries() > 28) {
-        delay(1);  // Wait 1ms for queue to drain
-      }
-    }
-
-    // Add left stepper command with retry logic and timeout
+    // Add left stepper command - wait and retry if queue full
     bool leftAdded = false;
-    int leftRetries = 0;
     while (!leftAdded) {
       AqeResultCode rc = leftStepper->addQueueEntry(&leftCmd, false);
       if (aqeIsOk(rc)) {
         leftAdded = true;
       } else if (aqeRetry(rc)) {
-        // Queue full, wait a bit and retry
-        leftRetries++;
-        if (leftRetries > 1000) {
-          Serial.print("ERROR: Left stepper stuck retrying segment ");
-          Serial.print(i);
-          Serial.print(" - return code: ");
-          Serial.println(toString(rc));
-          Serial.print("Queue entries: ");
-          Serial.println(leftStepper->queueEntries());
-          return;
-        }
-        delay(1);  // Wait 1ms for queue to drain
+        // Queue full, wait for it to drain a bit
+        delay(1);
       } else {
         // Fatal error
         Serial.print("ERROR adding left stepper segment ");
@@ -253,33 +235,15 @@ void executeTracedPath() {
       }
     }
 
-    // Wait for right queue to have space if queues are running
-    if (queuesStarted) {
-      while (rightStepper->queueEntries() > 28) {
-        delay(1);  // Wait 1ms for queue to drain
-      }
-    }
-
-    // Add right stepper command with retry logic and timeout
+    // Add right stepper command - wait and retry if queue full
     bool rightAdded = false;
-    int rightRetries = 0;
     while (!rightAdded) {
       AqeResultCode rc = rightStepper->addQueueEntry(&rightCmd, false);
       if (aqeIsOk(rc)) {
         rightAdded = true;
       } else if (aqeRetry(rc)) {
-        // Queue full, wait a bit and retry
-        rightRetries++;
-        if (rightRetries > 1000) {
-          Serial.print("ERROR: Right stepper stuck retrying segment ");
-          Serial.print(i);
-          Serial.print(" - return code: ");
-          Serial.println(toString(rc));
-          Serial.print("Queue entries: ");
-          Serial.println(rightStepper->queueEntries());
-          return;
-        }
-        delay(1);  // Wait 1ms for queue to drain
+        // Queue full, wait for it to drain a bit
+        delay(1);
       } else {
         // Fatal error
         Serial.print("ERROR adding right stepper segment ");
