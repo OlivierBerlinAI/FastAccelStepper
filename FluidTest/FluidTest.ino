@@ -735,14 +735,25 @@ void executeTracedPath() {
         .steps = rightSteps,
         .count_up = tracedPath[i].rightSteps >= 0};
 
-    // Add left stepper command with retry logic
+    // Add left stepper command with retry logic and timeout
     bool leftAdded = false;
+    int leftRetries = 0;
     while (!leftAdded) {
       AqeResultCode rc = leftStepper->addQueueEntry(&leftCmd, false);
       if (aqeIsOk(rc)) {
         leftAdded = true;
       } else if (aqeRetry(rc)) {
         // Queue full, wait a bit and retry
+        leftRetries++;
+        if (leftRetries > 10000) {
+          Serial.print("ERROR: Left stepper stuck retrying segment ");
+          Serial.print(i);
+          Serial.print(" - return code: ");
+          Serial.println(toString(rc));
+          Serial.print("Queue entries: ");
+          Serial.println(leftStepper->queueEntries());
+          return;
+        }
         delayMicroseconds(100);
       } else {
         // Fatal error
@@ -750,18 +761,31 @@ void executeTracedPath() {
         Serial.print(i);
         Serial.print(": ");
         Serial.println(toString(rc));
+        Serial.print("Left total ticks: ");
+        Serial.println(leftTotalTicks);
         return;
       }
     }
 
-    // Add right stepper command with retry logic
+    // Add right stepper command with retry logic and timeout
     bool rightAdded = false;
+    int rightRetries = 0;
     while (!rightAdded) {
       AqeResultCode rc = rightStepper->addQueueEntry(&rightCmd, false);
       if (aqeIsOk(rc)) {
         rightAdded = true;
       } else if (aqeRetry(rc)) {
         // Queue full, wait a bit and retry
+        rightRetries++;
+        if (rightRetries > 10000) {
+          Serial.print("ERROR: Right stepper stuck retrying segment ");
+          Serial.print(i);
+          Serial.print(" - return code: ");
+          Serial.println(toString(rc));
+          Serial.print("Queue entries: ");
+          Serial.println(rightStepper->queueEntries());
+          return;
+        }
         delayMicroseconds(100);
       } else {
         // Fatal error
@@ -769,6 +793,8 @@ void executeTracedPath() {
         Serial.print(i);
         Serial.print(": ");
         Serial.println(toString(rc));
+        Serial.print("Right total ticks: ");
+        Serial.println(rightTotalTicks);
         return;
       }
     }
@@ -790,13 +816,34 @@ void executeTracedPath() {
     Serial.println(" total)");
   }
 
-  Serial.println("\nAll queue entries added successfully!");
-  Serial.println("Starting synchronized execution...\n");
+  Serial.println("\n====================================");
+  Serial.println("All queue entries added successfully!");
+  Serial.print("Left queue has ");
+  Serial.print(leftStepper->queueEntries());
+  Serial.println(" entries");
+  Serial.print("Right queue has ");
+  Serial.print(rightStepper->queueEntries());
+  Serial.println(" entries");
+  Serial.println("====================================");
+  Serial.println("Starting synchronized execution NOW...");
+  Serial.println("====================================\n");
 
   // Start both steppers synchronously
   // addQueueEntry(NULL, true) starts the queue without adding a command
-  leftStepper->addQueueEntry(NULL, true);
-  rightStepper->addQueueEntry(NULL, true);
+  AqeResultCode leftStartResult = leftStepper->addQueueEntry(NULL, true);
+  AqeResultCode rightStartResult = rightStepper->addQueueEntry(NULL, true);
+
+  Serial.print("Left start result: ");
+  Serial.println(toString(leftStartResult));
+  Serial.print("Right start result: ");
+  Serial.println(toString(rightStartResult));
+
+  if (!aqeIsOk(leftStartResult) || !aqeIsOk(rightStartResult)) {
+    Serial.println("ERROR: Failed to start queues!");
+    return;
+  }
+
+  Serial.println("Queues started successfully!\n");
 
   // Monitor execution
   unsigned long startTime = millis();
