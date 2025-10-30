@@ -151,16 +151,6 @@ void executeTracedPath() {
   bool queuesStarted = false;
 
   for (int i = 0; i < pathLength; i++) {
-    // If queues are running, wait for space before adding more
-    if (queuesStarted) {
-      // Wait until both queues have space (less than 28 entries, leaving
-      // margin)
-      while (leftStepper->queueEntries() > 28 ||
-             rightStepper->queueEntries() > 28) {
-        delay(1);  // Wait 1ms for queue to drain
-      }
-    }
-
     // Calculate adjusted ticks with multiplier
     uint32_t leftTicksAdjusted =
         (uint32_t)tracedPath[i].leftTicks * TICK_MULTIPLIER;
@@ -224,6 +214,13 @@ void executeTracedPath() {
         .steps = rightSteps,
         .count_up = tracedPath[i].rightSteps >= 0};
 
+    // Wait for left queue to have space if queues are running
+    if (queuesStarted) {
+      while (leftStepper->queueEntries() > 28) {
+        delay(1);  // Wait 1ms for queue to drain
+      }
+    }
+
     // Add left stepper command with retry logic and timeout
     bool leftAdded = false;
     int leftRetries = 0;
@@ -253,6 +250,13 @@ void executeTracedPath() {
         Serial.print("Left total ticks: ");
         Serial.println(leftTotalTicks);
         return;
+      }
+    }
+
+    // Wait for right queue to have space if queues are running
+    if (queuesStarted) {
+      while (rightStepper->queueEntries() > 28) {
+        delay(1);  // Wait 1ms for queue to drain
       }
     }
 
