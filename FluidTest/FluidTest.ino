@@ -670,6 +670,12 @@ void executeTracedPath() {
 
   // Add all path segments to the queues
   Serial.println("Adding queue entries...");
+  Serial.print("Total segments: ");
+  Serial.println(pathLength);
+  Serial.print("Queue capacity: 32 entries per stepper");
+  Serial.println();
+
+  bool queuesStarted = false;
 
   for (int i = 0; i < pathLength; i++) {
     // Calculate adjusted ticks with multiplier
@@ -814,6 +820,27 @@ void executeTracedPath() {
     Serial.print(" ticks (");
     Serial.print(rightTotalTicks);
     Serial.println(" total)");
+
+    // Start queues after adding some entries so they can process while we add more
+    // This prevents the queue from filling up completely
+    if (!queuesStarted && (i >= 15 || i == pathLength - 1)) {
+      Serial.println("\n>>> Starting queues to begin execution...");
+      AqeResultCode leftStartResult = leftStepper->addQueueEntry(NULL, true);
+      AqeResultCode rightStartResult = rightStepper->addQueueEntry(NULL, true);
+
+      Serial.print("Left start result: ");
+      Serial.println(toString(leftStartResult));
+      Serial.print("Right start result: ");
+      Serial.println(toString(rightStartResult));
+
+      if (!aqeIsOk(leftStartResult) || !aqeIsOk(rightStartResult)) {
+        Serial.println("ERROR: Failed to start queues!");
+        return;
+      }
+
+      queuesStarted = true;
+      Serial.println(">>> Queues started! Continuing to add entries...\n");
+    }
   }
 
   Serial.println("\n====================================");
@@ -825,25 +852,26 @@ void executeTracedPath() {
   Serial.print(rightStepper->queueEntries());
   Serial.println(" entries");
   Serial.println("====================================");
-  Serial.println("Starting synchronized execution NOW...");
-  Serial.println("====================================\n");
 
-  // Start both steppers synchronously
-  // addQueueEntry(NULL, true) starts the queue without adding a command
-  AqeResultCode leftStartResult = leftStepper->addQueueEntry(NULL, true);
-  AqeResultCode rightStartResult = rightStepper->addQueueEntry(NULL, true);
+  if (!queuesStarted) {
+    // If we have 15 or fewer segments and haven't started yet, start now
+    Serial.println("Starting queues now...");
+    AqeResultCode leftStartResult = leftStepper->addQueueEntry(NULL, true);
+    AqeResultCode rightStartResult = rightStepper->addQueueEntry(NULL, true);
 
-  Serial.print("Left start result: ");
-  Serial.println(toString(leftStartResult));
-  Serial.print("Right start result: ");
-  Serial.println(toString(rightStartResult));
+    Serial.print("Left start result: ");
+    Serial.println(toString(leftStartResult));
+    Serial.print("Right start result: ");
+    Serial.println(toString(rightStartResult));
 
-  if (!aqeIsOk(leftStartResult) || !aqeIsOk(rightStartResult)) {
-    Serial.println("ERROR: Failed to start queues!");
-    return;
+    if (!aqeIsOk(leftStartResult) || !aqeIsOk(rightStartResult)) {
+      Serial.println("ERROR: Failed to start queues!");
+      return;
+    }
+    queuesStarted = true;
   }
 
-  Serial.println("Queues started successfully!\n");
+  Serial.println("Monitoring execution...\n");
 
   // Monitor execution
   unsigned long startTime = millis();
