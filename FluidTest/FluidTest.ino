@@ -678,6 +678,14 @@ void executeTracedPath() {
   bool queuesStarted = false;
 
   for (int i = 0; i < pathLength; i++) {
+    // If queues are running, wait for space before adding more
+    if (queuesStarted) {
+      // Wait until both queues have space (less than 28 entries, leaving margin)
+      while (leftStepper->queueEntries() > 28 || rightStepper->queueEntries() > 28) {
+        delay(1);  // Wait 1ms for queue to drain
+      }
+    }
+
     // Calculate adjusted ticks with multiplier
     uint32_t leftTicksAdjusted =
         (uint32_t)tracedPath[i].leftTicks * TICK_MULTIPLIER;
@@ -751,7 +759,7 @@ void executeTracedPath() {
       } else if (aqeRetry(rc)) {
         // Queue full, wait a bit and retry
         leftRetries++;
-        if (leftRetries > 10000) {
+        if (leftRetries > 1000) {
           Serial.print("ERROR: Left stepper stuck retrying segment ");
           Serial.print(i);
           Serial.print(" - return code: ");
@@ -760,7 +768,7 @@ void executeTracedPath() {
           Serial.println(leftStepper->queueEntries());
           return;
         }
-        delayMicroseconds(100);
+        delay(1);  // Wait 1ms for queue to drain
       } else {
         // Fatal error
         Serial.print("ERROR adding left stepper segment ");
@@ -783,7 +791,7 @@ void executeTracedPath() {
       } else if (aqeRetry(rc)) {
         // Queue full, wait a bit and retry
         rightRetries++;
-        if (rightRetries > 10000) {
+        if (rightRetries > 1000) {
           Serial.print("ERROR: Right stepper stuck retrying segment ");
           Serial.print(i);
           Serial.print(" - return code: ");
@@ -792,7 +800,7 @@ void executeTracedPath() {
           Serial.println(rightStepper->queueEntries());
           return;
         }
-        delayMicroseconds(100);
+        delay(1);  // Wait 1ms for queue to drain
       } else {
         // Fatal error
         Serial.print("ERROR adding right stepper segment ");
@@ -805,21 +813,19 @@ void executeTracedPath() {
       }
     }
 
-    Serial.print("Added segment ");
-    Serial.print(i);
-    Serial.print(" - Left: ");
-    Serial.print(tracedPath[i].leftSteps);
-    Serial.print(" steps @ ");
-    Serial.print(leftTicksAdjusted);
-    Serial.print(" ticks (");
-    Serial.print(leftTotalTicks);
-    Serial.print(" total), Right: ");
-    Serial.print(tracedPath[i].rightSteps);
-    Serial.print(" steps @ ");
-    Serial.print(rightTicksAdjusted);
-    Serial.print(" ticks (");
-    Serial.print(rightTotalTicks);
-    Serial.println(" total)");
+    // Print progress every 50 segments to avoid serial spam
+    if (i % 50 == 0 || i == pathLength - 1) {
+      Serial.print("Progress: ");
+      Serial.print(i + 1);
+      Serial.print("/");
+      Serial.print(pathLength);
+      Serial.print(" segments added (");
+      Serial.print((i + 1) * 100 / pathLength);
+      Serial.print("%) - Queue sizes: L=");
+      Serial.print(leftStepper->queueEntries());
+      Serial.print(" R=");
+      Serial.println(rightStepper->queueEntries());
+    }
 
     // Start queues after adding some entries so they can process while we add more
     // This prevents the queue from filling up completely
