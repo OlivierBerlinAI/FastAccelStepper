@@ -224,6 +224,17 @@ void executeTracedPath() {
       } else if (aqeRetry(rc)) {
         // Queue full, wait for it to drain a bit
         leftRetries++;
+
+        // Check if queue has stalled (full but not running)
+        if (leftRetries % 100 == 0) {  // Check every 100ms
+          if (!leftStepper->isQueueEmpty() && !leftStepper->isQueueRunning()) {
+            Serial.print("\nWARNING: Left queue stalled at segment ");
+            Serial.print(i);
+            Serial.println(", restarting...");
+            leftStepper->addQueueEntry(NULL, true);  // Restart queue
+          }
+        }
+
         if (leftRetries > 5000) {
           Serial.print("\nERROR: Left queue stuck at segment ");
           Serial.println(i);
@@ -260,6 +271,17 @@ void executeTracedPath() {
       } else if (aqeRetry(rc)) {
         // Queue full, wait for it to drain a bit
         rightRetries++;
+
+        // Check if queue has stalled (full but not running)
+        if (rightRetries % 100 == 0) {  // Check every 100ms
+          if (!rightStepper->isQueueEmpty() && !rightStepper->isQueueRunning()) {
+            Serial.print("\nWARNING: Right queue stalled at segment ");
+            Serial.print(i);
+            Serial.println(", restarting...");
+            rightStepper->addQueueEntry(NULL, true);  // Restart queue
+          }
+        }
+
         if (rightRetries > 5000) {
           Serial.print("\nERROR: Right queue stuck at segment ");
           Serial.println(i);
