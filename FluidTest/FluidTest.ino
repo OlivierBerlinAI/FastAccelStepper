@@ -19,9 +19,9 @@
 #define MOTOR_MS2 21
 
 // Right stepper
-#define RIGHT_STEP_PIN 14
-#define RIGHT_DIR_PIN 12
-#define RIGHT_ENABLE_PIN 13  // Optional, set to -1 if not used
+#define RIGHT_STEP_PIN 4
+#define RIGHT_DIR_PIN 2
+#define RIGHT_ENABLE_PIN 15  // Optional, set to -1 if not used
 
 // Create engine and stepper objects
 FastAccelStepperEngine engine = FastAccelStepperEngine();
