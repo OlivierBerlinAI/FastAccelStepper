@@ -671,9 +671,10 @@ void executeTracedPath() {
   Serial.println("\nAll queue entries added successfully!");
   Serial.println("Starting synchronized execution...\n");
 
-  // Start both steppers
-  leftStepper->startQueue();
-  rightStepper->startQueue();
+  // Start both steppers synchronously
+  // addQueueEntry(NULL, true) starts the queue without adding a command
+  leftStepper->addQueueEntry(NULL, true);
+  rightStepper->addQueueEntry(NULL, true);
 
   // Monitor execution
   unsigned long startTime = millis();
