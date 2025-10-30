@@ -216,12 +216,27 @@ void executeTracedPath() {
 
     // Add left stepper command - wait and retry if queue full
     bool leftAdded = false;
+    int leftRetries = 0;
     while (!leftAdded) {
       AqeResultCode rc = leftStepper->addQueueEntry(&leftCmd, false);
       if (aqeIsOk(rc)) {
         leftAdded = true;
       } else if (aqeRetry(rc)) {
         // Queue full, wait for it to drain a bit
+        leftRetries++;
+        if (leftRetries > 5000) {
+          Serial.print("\nERROR: Left queue stuck at segment ");
+          Serial.println(i);
+          Serial.print("Return code: ");
+          Serial.println(toString(rc));
+          Serial.print("Queue entries: ");
+          Serial.println(leftStepper->queueEntries());
+          Serial.print("Queue running: ");
+          Serial.println(leftStepper->isQueueRunning());
+          Serial.print("Queue empty: ");
+          Serial.println(leftStepper->isQueueEmpty());
+          return;
+        }
         delay(1);
       } else {
         // Fatal error
@@ -237,12 +252,27 @@ void executeTracedPath() {
 
     // Add right stepper command - wait and retry if queue full
     bool rightAdded = false;
+    int rightRetries = 0;
     while (!rightAdded) {
       AqeResultCode rc = rightStepper->addQueueEntry(&rightCmd, false);
       if (aqeIsOk(rc)) {
         rightAdded = true;
       } else if (aqeRetry(rc)) {
         // Queue full, wait for it to drain a bit
+        rightRetries++;
+        if (rightRetries > 5000) {
+          Serial.print("\nERROR: Right queue stuck at segment ");
+          Serial.println(i);
+          Serial.print("Return code: ");
+          Serial.println(toString(rc));
+          Serial.print("Queue entries: ");
+          Serial.println(rightStepper->queueEntries());
+          Serial.print("Queue running: ");
+          Serial.println(rightStepper->isQueueRunning());
+          Serial.print("Queue empty: ");
+          Serial.println(rightStepper->isQueueEmpty());
+          return;
+        }
         delay(1);
       } else {
         // Fatal error
