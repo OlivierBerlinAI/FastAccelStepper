@@ -18,6 +18,40 @@ This test demonstrates using FastAccelStepper queue instructions with traced pat
 
 You can modify these pins in the `FluidTest.ino` file to match your hardware.
 
+## Configuration
+
+### Important Settings at the top of FluidTest.ino:
+
+**INVERT_ENABLE_PIN** (default: `false`)
+- Set to `true` if your stepper driver requires LOW signal to enable
+- Common drivers like A4988, DRV8825 typically need `false` (HIGH to enable)
+- Some drivers may need `true` (LOW to enable)
+- If motors don't move, try toggling this setting
+
+**TICK_MULTIPLIER** (default: `50`)
+- Multiplies all tick values from your traced path data
+- ESP32 requires MIN_CMD_TICKS = 3200 (200µs minimum command duration)
+- Formula: `ticks * steps >= 3200`
+- If you see warnings about commands being rejected, increase this value
+- Example: With original ticks of 66 and 17 steps:
+  - Without multiplier: 66 × 17 = 1122 (FAILS - below 3200)
+  - With multiplier 50: 3300 × 17 = 56100 (OK)
+
+### How to Adjust Settings:
+
+1. **If motors don't move at all:**
+   - Check wiring and power supply
+   - Try setting `INVERT_ENABLE_PIN true`
+   - Verify enable pins are connected correctly
+
+2. **If you see "Command may be rejected" warnings:**
+   - Increase `TICK_MULTIPLIER` (try 60, 70, 100, etc.)
+   - The program will show warnings for any commands that violate MIN_CMD_TICKS
+
+3. **If motors move too slowly:**
+   - Decrease `TICK_MULTIPLIER` (but keep above minimum requirements)
+   - Check that total ticks don't exceed 65535
+
 ## Compiling and Uploading
 
 ### Option 1: Using PlatformIO (Recommended)
@@ -105,12 +139,24 @@ This shows:
 **Issue: Steppers not moving**
 - Check wiring and power supply to stepper drivers
 - Verify pin definitions match your hardware
-- Check if enable pins are active (may need to invert logic)
+- **Try setting `INVERT_ENABLE_PIN true`** - this is the most common issue
+- Manually set enable pins LOW/HIGH to test driver
+- Check serial output for error messages
+
+**Issue: "Command may be rejected" warnings**
+- **Increase `TICK_MULTIPLIER`** to 60, 70, or 100
+- The formula is: `ticks × steps ≥ 3200` for ESP32
+- Serial monitor will show which segments fail validation
+
+**Issue: Motors move but path is wrong**
+- Check `TICK_MULTIPLIER` - higher values = slower movement
+- Verify direction pin connections (may need to swap)
+- Check microstepping settings on your driver
 
 **Issue: Position mismatch**
-- Check if ticks values are above MIN_CMD_TICKS (3200 for ESP32 @ 16MHz)
-- Verify stepper driver microstepping settings
+- Verify stepper driver microstepping settings match expectations
 - Check mechanical coupling and belt tension
+- Look for skipped steps (acceleration too high)
 
 **Issue: Compilation errors**
 - Ensure FastAccelStepper library is properly installed

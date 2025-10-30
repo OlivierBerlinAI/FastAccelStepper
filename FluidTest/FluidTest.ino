@@ -23,6 +23,13 @@
 #define RIGHT_DIR_PIN 2
 #define RIGHT_ENABLE_PIN 15  // Optional, set to -1 if not used
 
+// Enable pin logic - set to true if your driver needs LOW to enable
+#define INVERT_ENABLE_PIN false
+
+// Tick multiplier - increase this if your ticks are too low
+// ESP32 MIN_CMD_TICKS = 3200, so multiply ticks to meet this requirement
+#define TICK_MULTIPLIER 50
+
 // Create engine and stepper objects
 FastAccelStepperEngine engine = FastAccelStepperEngine();
 FastAccelStepper* leftStepper = NULL;
@@ -530,7 +537,9 @@ void setup() {
     leftStepper->setDirectionPin(LEFT_DIR_PIN);
     if (LEFT_ENABLE_PIN >= 0) {
       leftStepper->setEnablePin(LEFT_ENABLE_PIN);
+      leftStepper->setEnablePinInverted(INVERT_ENABLE_PIN);
       leftStepper->setAutoEnable(true);
+      leftStepper->enableOutputs();
     }
     Serial.println("Left stepper initialized successfully");
   } else {
@@ -546,7 +555,9 @@ void setup() {
     rightStepper->setDirectionPin(RIGHT_DIR_PIN);
     if (RIGHT_ENABLE_PIN >= 0) {
       rightStepper->setEnablePin(RIGHT_ENABLE_PIN);
+      rightStepper->setEnablePinInverted(INVERT_ENABLE_PIN);
       rightStepper->setAutoEnable(true);
+      rightStepper->enableOutputs();
     }
     Serial.println("Right stepper initialized successfully");
   } else {
@@ -559,6 +570,10 @@ void setup() {
   Serial.println(TICKS_PER_S);
   Serial.print("MIN_CMD_TICKS: ");
   Serial.println(MIN_CMD_TICKS);
+  Serial.print("TICK_MULTIPLIER: ");
+  Serial.println(TICK_MULTIPLIER);
+  Serial.print("Enable pin inverted: ");
+  Serial.println(INVERT_ENABLE_PIN ? "YES" : "NO");
   Serial.print("Path length: ");
   Serial.print(pathLength);
   Serial.println(" segments");
@@ -605,16 +620,65 @@ void executeTracedPath() {
   Serial.println("Adding queue entries...");
 
   for (int i = 0; i < pathLength; i++) {
+    // Calculate adjusted ticks with multiplier
+    uint32_t leftTicksAdjusted = (uint32_t)tracedPath[i].leftTicks * TICK_MULTIPLIER;
+    uint32_t rightTicksAdjusted = (uint32_t)tracedPath[i].rightTicks * TICK_MULTIPLIER;
+    uint8_t leftSteps = (uint8_t)abs(tracedPath[i].leftSteps);
+    uint8_t rightSteps = (uint8_t)abs(tracedPath[i].rightSteps);
+
+    // Validate against MIN_CMD_TICKS
+    uint32_t leftTotalTicks = leftTicksAdjusted * leftSteps;
+    uint32_t rightTotalTicks = rightTicksAdjusted * rightSteps;
+
+    if (leftTotalTicks < MIN_CMD_TICKS) {
+      Serial.print("WARNING: Segment ");
+      Serial.print(i);
+      Serial.print(" left total ticks (");
+      Serial.print(leftTotalTicks);
+      Serial.print(") < MIN_CMD_TICKS (");
+      Serial.print(MIN_CMD_TICKS);
+      Serial.println("). Command may be rejected!");
+    }
+
+    if (rightTotalTicks < MIN_CMD_TICKS) {
+      Serial.print("WARNING: Segment ");
+      Serial.print(i);
+      Serial.print(" right total ticks (");
+      Serial.print(rightTotalTicks);
+      Serial.print(") < MIN_CMD_TICKS (");
+      Serial.print(MIN_CMD_TICKS);
+      Serial.println("). Command may be rejected!");
+    }
+
+    // Cap ticks at uint16_t max
+    if (leftTicksAdjusted > 65535) {
+      Serial.print("WARNING: Segment ");
+      Serial.print(i);
+      Serial.print(" left ticks capped at 65535 (was ");
+      Serial.print(leftTicksAdjusted);
+      Serial.println(")");
+      leftTicksAdjusted = 65535;
+    }
+
+    if (rightTicksAdjusted > 65535) {
+      Serial.print("WARNING: Segment ");
+      Serial.print(i);
+      Serial.print(" right ticks capped at 65535 (was ");
+      Serial.print(rightTicksAdjusted);
+      Serial.println(")");
+      rightTicksAdjusted = 65535;
+    }
+
     // Prepare left stepper command
     struct stepper_command_s leftCmd = {
-        .ticks = tracedPath[i].leftTicks,
-        .steps = (uint8_t)abs(tracedPath[i].leftSteps),
+        .ticks = (uint16_t)leftTicksAdjusted,
+        .steps = leftSteps,
         .count_up = tracedPath[i].leftSteps >= 0};
 
     // Prepare right stepper command
     struct stepper_command_s rightCmd = {
-        .ticks = tracedPath[i].rightTicks,
-        .steps = (uint8_t)abs(tracedPath[i].rightSteps),
+        .ticks = (uint16_t)rightTicksAdjusted,
+        .steps = rightSteps,
         .count_up = tracedPath[i].rightSteps >= 0};
 
     // Add left stepper command with retry logic
@@ -660,12 +724,16 @@ void executeTracedPath() {
     Serial.print(" - Left: ");
     Serial.print(tracedPath[i].leftSteps);
     Serial.print(" steps @ ");
-    Serial.print(tracedPath[i].leftTicks);
-    Serial.print(" ticks, Right: ");
+    Serial.print(leftTicksAdjusted);
+    Serial.print(" ticks (");
+    Serial.print(leftTotalTicks);
+    Serial.print(" total), Right: ");
     Serial.print(tracedPath[i].rightSteps);
     Serial.print(" steps @ ");
-    Serial.print(tracedPath[i].rightTicks);
-    Serial.println(" ticks");
+    Serial.print(rightTicksAdjusted);
+    Serial.print(" ticks (");
+    Serial.print(rightTotalTicks);
+    Serial.println(" total)");
   }
 
   Serial.println("\nAll queue entries added successfully!");
