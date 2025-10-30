@@ -14,6 +14,15 @@
  *   console.log(stepper.getCurrentPosition());
  */
 
+// Result codes for addQueueEntry()
+const AQE_OK = 0;
+const AQE_QUEUE_FULL = 1;
+const AQE_ERROR_TICKS_TOO_LOW = -1;
+
+// Simulated TICKS_PER_S (16 MHz like AVR/ESP32)
+const TICKS_PER_S = 16000000;
+const MIN_CMD_TICKS = 640;  // Minimum ticks for a command
+
 class FastAccelStepper {
   constructor() {
     // Motion parameters
@@ -44,6 +53,16 @@ class FastAccelStepper {
     this.RAMP_STATE_DECELERATE = 3;
 
     this._rampState = this.RAMP_STATE_IDLE;
+
+    // Raw Access - Command Queue
+    this._queue = [];                // Command queue for raw access
+    this._queueMaxLen = 32;          // Maximum queue length
+    this._queueRunning = false;      // Is queue executing?
+    this._queueLastTime = null;      // Last queue execution time
+    this._queueCurrentCmd = null;    // Currently executing command
+    this._queueCmdStartTime = null;  // When current command started
+    this._queueCmdStepsLeft = 0;     // Steps remaining in current command
+    this._queueCmdNextStepTime = null; // Next step time for current command
   }
 
   /**
@@ -436,14 +455,170 @@ class FastAccelStepper {
    */
   getPositionAfterCommandsCompleted() {
     this._update();
+    this._processQueue();
     if (this._targetPosition !== null) {
       return Math.round(this._targetPosition);
     }
     return Math.round(this._position);
+  }
+
+  // ==================== RAW ACCESS API ====================
+
+  /**
+   * Add a command to the queue for raw access mode
+   * @param {Object} cmd - Command object with {ticks, steps, count_up}
+   * @param {number} cmd.ticks - Ticks between steps (0-65535)
+   * @param {number} cmd.steps - Number of steps (0-255)
+   * @param {boolean} cmd.count_up - Direction (true=forward, false=backward)
+   * @param {boolean} start - Start queue if not running (default: true)
+   * @returns {number} AQE_OK (0) on success, or error code
+   */
+  addQueueEntry(cmd, start = true) {
+    // Check if command is null (used to start queue)
+    if (cmd === null) {
+      if (start && !this._queueRunning && this._queue.length > 0) {
+        this._queueRunning = true;
+        this._queueLastTime = performance.now();
+      }
+      return AQE_OK;
+    }
+
+    // Validate command
+    if (cmd.ticks < MIN_CMD_TICKS && cmd.steps > 0) {
+      return AQE_ERROR_TICKS_TOO_LOW;
+    }
+
+    // Check if queue is full
+    if (this._queue.length >= this._queueMaxLen) {
+      return AQE_QUEUE_FULL;
+    }
+
+    // Add command to queue
+    this._queue.push({
+      ticks: cmd.ticks,
+      steps: cmd.steps,
+      count_up: cmd.count_up
+    });
+
+    // Start queue if requested
+    if (start && !this._queueRunning) {
+      this._queueRunning = true;
+      this._queueLastTime = performance.now();
+    }
+
+    return AQE_OK;
+  }
+
+  /**
+   * Check if queue is empty
+   * @returns {boolean} True if queue is empty
+   */
+  isQueueEmpty() {
+    this._processQueue();
+    return this._queue.length === 0 && this._queueCurrentCmd === null;
+  }
+
+  /**
+   * Check if queue is full
+   * @returns {boolean} True if queue is full
+   */
+  isQueueFull() {
+    return this._queue.length >= this._queueMaxLen;
+  }
+
+  /**
+   * Check if queue is running (executing commands)
+   * @returns {boolean} True if queue is running
+   */
+  isQueueRunning() {
+    this._processQueue();
+    return this._queueRunning;
+  }
+
+  /**
+   * Get number of entries in queue
+   * @returns {number} Number of commands in queue
+   */
+  queueEntries() {
+    this._processQueue();
+    let count = this._queue.length;
+    if (this._queueCurrentCmd !== null) {
+      count++;
+    }
+    return count;
+  }
+
+  /**
+   * Process the command queue (internal method)
+   * This simulates the ISR/task that processes commands
+   * @private
+   */
+  _processQueue() {
+    if (!this._queueRunning) {
+      return;
+    }
+
+    const now = performance.now();
+
+    // If no current command, get next from queue
+    if (this._queueCurrentCmd === null) {
+      if (this._queue.length === 0) {
+        this._queueRunning = false;
+        return;
+      }
+
+      this._queueCurrentCmd = this._queue.shift();
+      this._queueCmdStartTime = now;
+      this._queueCmdStepsLeft = this._queueCurrentCmd.steps;
+      this._queueCmdNextStepTime = now;
+    }
+
+    const cmd = this._queueCurrentCmd;
+
+    // Calculate time per step in milliseconds
+    const ticksPerStep = cmd.ticks;
+    const msPerStep = (ticksPerStep / TICKS_PER_S) * 1000;
+
+    // Execute steps that should have happened by now
+    while (this._queueCmdStepsLeft > 0 && now >= this._queueCmdNextStepTime) {
+      // Execute one step
+      const direction = cmd.count_up ? 1 : -1;
+
+      // Apply direction pin inversion at execution time (for visualization)
+      let positionChange = direction;
+
+      this._position += positionChange;
+      this._queueCmdStepsLeft--;
+      this._queueCmdNextStepTime += msPerStep;
+    }
+
+    // Check if command is complete
+    if (this._queueCmdStepsLeft === 0) {
+      // If steps was 0, this was a pause command - check if pause is done
+      if (cmd.steps === 0) {
+        const pauseDuration = (cmd.ticks / TICKS_PER_S) * 1000;
+        if (now - this._queueCmdStartTime >= pauseDuration) {
+          this._queueCurrentCmd = null;
+        }
+      } else {
+        // Steps command complete
+        this._queueCurrentCmd = null;
+      }
+    }
+
+    // Continue processing if there are more commands
+    if (this._queueCurrentCmd === null && this._queue.length > 0) {
+      this._processQueue();
+    }
   }
 }
 
 // Export for Node.js and browser
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = FastAccelStepper;
+  module.exports.AQE_OK = AQE_OK;
+  module.exports.AQE_QUEUE_FULL = AQE_QUEUE_FULL;
+  module.exports.AQE_ERROR_TICKS_TOO_LOW = AQE_ERROR_TICKS_TOO_LOW;
+  module.exports.TICKS_PER_S = TICKS_PER_S;
+  module.exports.MIN_CMD_TICKS = MIN_CMD_TICKS;
 }

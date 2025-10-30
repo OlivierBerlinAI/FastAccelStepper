@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastAccelStepper.js - Raw Access Demo</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1000px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 {
+            color: #4ec9b0;
+        }
+        .info-box {
+            background: #1a1a2e;
+            border-left: 4px solid #4ec9b0;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 3px;
+        }
+        .controls {
+            margin: 20px 0;
+            padding: 20px;
+            background: #252526;
+            border-radius: 5px;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        button:disabled {
+            background: #3e3e42;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 20px;
+            background: #252526;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .status-line {
+            margin: 5px 0;
+        }
+        label {
+            display: inline-block;
+            width: 150px;
+            color: #9cdcfe;
+        }
+        .visualization {
+            margin: 20px 0;
+            padding: 20px;
+            background: #252526;
+            border-radius: 5px;
+            height: 150px;
+            position: relative;
+            overflow: hidden;
+        }
+        .stepper-visual {
+            position: absolute;
+            top: 50%;
+            width: 20px;
+            height: 20px;
+            background: #4ec9b0;
+            border-radius: 50%;
+            transform: translateY(-50%);
+            transition: left 0.05s linear;
+        }
+        .center-line {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #555;
+        }
+        .log {
+            margin: 20px 0;
+            padding: 20px;
+            background: #252526;
+            border-radius: 5px;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .log-line {
+            margin: 2px 0;
+            color: #858585;
+        }
+        .log-line.info {
+            color: #4ec9b0;
+        }
+        .log-line.warning {
+            color: #ce9178;
+        }
+    </style>
+</head>
+<body>
+    <h1>FastAccelStepper.js - Raw Access Demo</h1>
+
+    <div class="info-box">
+        <strong>Raw Access Mode:</strong><br>
+        • Bypasses the high-level motion planner<br>
+        • Direct control of step timing via command queue<br>
+        • Commands specify: ticks (timing), steps (count), count_up (direction)<br>
+        • TICKS_PER_S = 16,000,000 (simulated 16 MHz timer)<br>
+        • Example: 500 steps with acceleration profile (like RawAccess.ino)
+    </div>
+
+    <div class="controls">
+        <h3>Raw Access Control</h3>
+        <button onclick="runRawAccessDemo()">Run Raw Access Demo</button>
+        <button onclick="stopQueue()">Stop Queue</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div class="visualization">
+        <div class="center-line"></div>
+        <div class="stepper-visual" id="stepperVisual"></div>
+    </div>
+
+    <div class="status">
+        <h3>Status</h3>
+        <div class="status-line">
+            <label>Position:</label>
+            <span id="position">0</span> steps
+        </div>
+        <div class="status-line">
+            <label>Queue Entries:</label>
+            <span id="queueEntries">0</span>
+        </div>
+        <div class="status-line">
+            <label>Queue Running:</label>
+            <span id="queueRunning">false</span>
+        </div>
+        <div class="status-line">
+            <label>Queue Empty:</label>
+            <span id="queueEmpty">true</span>
+        </div>
+    </div>
+
+    <div class="log" id="log">
+        <div class="log-line info">Ready. Click "Run Raw Access Demo" to start.</div>
+    </div>
+
+    <script src="FastAccelStepper.js"></script>
+    <script>
+        // Create stepper instance
+        const stepper = new FastAccelStepper();
+        stepper.setDirectionPin(1, true);
+
+        let isRunning = false;
+
+        // Logging function
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const line = document.createElement('div');
+            line.className = `log-line ${type}`;
+            line.textContent = message;
+            logDiv.appendChild(line);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Update status display
+        function updateStatus() {
+            const position = stepper.getCurrentPosition();
+            const queueEntries = stepper.queueEntries();
+            const queueRunning = stepper.isQueueRunning();
+            const queueEmpty = stepper.isQueueEmpty();
+
+            document.getElementById('position').textContent = position;
+            document.getElementById('queueEntries').textContent = queueEntries;
+            document.getElementById('queueRunning').textContent = queueRunning;
+            document.getElementById('queueEmpty').textContent = queueEmpty;
+
+            // Update visualization
+            const visual = document.getElementById('stepperVisual');
+            const container = visual.parentElement;
+            const centerX = container.offsetWidth / 2;
+            const scale = 0.2; // pixels per step
+            const x = centerX + (position * scale);
+            visual.style.left = Math.max(0, Math.min(container.offsetWidth - 20, x)) + 'px';
+        }
+
+        // Raw Access Demo - Similar to RawAccess.ino
+        async function runRawAccessDemo() {
+            if (isRunning) {
+                log('Demo already running!', 'warning');
+                return;
+            }
+
+            isRunning = true;
+            log('Starting Raw Access Demo...', 'info');
+
+            const STEPS = 500;
+            const direction = true; // count_up
+
+            log(`Generating ${STEPS} commands with acceleration profile`, 'info');
+
+            // Generate commands similar to RawAccess.ino
+            for (let step = 1; step < STEPS; step++) {
+                // Acceleration profile: fast in middle, slow at ends
+                const k = Math.max(step, STEPS - step);
+                let ticks = Math.floor(TICKS_PER_S / 100 / (STEPS - k));
+
+                // Ensure ticks is valid
+                if (ticks < MIN_CMD_TICKS) {
+                    ticks = MIN_CMD_TICKS;
+                }
+
+                let curr_ticks;
+                let steps;
+
+                if (ticks > 65535) {
+                    curr_ticks = 32768;
+                    steps = 1;
+                } else {
+                    steps = Math.min(Math.floor(65535 / ticks), 255);
+                    curr_ticks = ticks;
+                }
+
+                ticks -= curr_ticks;
+
+                // Add command to queue
+                const cmd = {
+                    ticks: curr_ticks,
+                    steps: steps,
+                    count_up: direction
+                };
+
+                let rc = stepper.addQueueEntry(cmd);
+                while (rc !== AQE_OK) {
+                    if (rc === AQE_QUEUE_FULL) {
+                        // Wait for queue to have space
+                        await new Promise(resolve => setTimeout(resolve, 10));
+                        rc = stepper.addQueueEntry(cmd);
+                    } else {
+                        log(`Error adding command: ${rc}`, 'warning');
+                        break;
+                    }
+                }
+
+                // Add pause commands for remaining ticks
+                while (ticks > 0) {
+                    if (ticks > 65535) {
+                        curr_ticks = 32768;
+                    } else {
+                        curr_ticks = ticks;
+                    }
+                    ticks -= curr_ticks;
+
+                    const cmd2 = {
+                        ticks: curr_ticks,
+                        steps: 0,
+                        count_up: direction
+                    };
+
+                    let rc2 = stepper.addQueueEntry(cmd2);
+                    while (rc2 !== AQE_OK) {
+                        if (rc2 === AQE_QUEUE_FULL) {
+                            await new Promise(resolve => setTimeout(resolve, 10));
+                            rc2 = stepper.addQueueEntry(cmd2);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            log('All commands queued', 'info');
+            log('Waiting for queue to finish...', 'info');
+
+            // Wait for queue to complete
+            while (!stepper.isQueueEmpty()) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+            log('Queue is empty', 'info');
+
+            while (stepper.isRunning()) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+
+            log('Stepper has stopped', 'info');
+            log(`Final position: ${stepper.getCurrentPosition()} steps`, 'info');
+
+            isRunning = false;
+        }
+
+        function stopQueue() {
+            // For raw access, we'd need to clear the queue
+            // For now, just log that we can't stop mid-motion in this simple implementation
+            log('Queue stop requested (queue will finish current command)', 'warning');
+        }
+
+        // Update display every 50ms
+        setInterval(updateStatus, 50);
+    </script>
+</body>
+</html>

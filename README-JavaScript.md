@@ -54,6 +54,10 @@ setInterval(() => {
 
 ## API Reference
 
+FastAccelStepper.js provides two modes of operation:
+1. **High-Level API**: Motion planning with move(), moveTo(), runForward(), etc.
+2. **Raw Access API**: Direct control of step timing via command queue
+
 ### Configuration Methods
 
 #### `setSpeedInHz(speedHz)`
@@ -146,6 +150,58 @@ Get the position where the stepper will be after all current commands are comple
 - **Returns:** Future position in steps
 - **Note:** For position-based moves (move/moveTo), returns the target position. For continuous running or idle, returns current position
 
+### Raw Access API
+
+Raw Access allows direct control of step timing by adding commands to a queue, bypassing the high-level motion planner.
+
+#### `addQueueEntry(cmd, start)`
+Add a command to the queue for raw access mode.
+- **Parameters:**
+  - `cmd` - Command object with properties:
+    - `ticks` (number): Ticks between steps (0-65535). TICKS_PER_S = 16,000,000
+    - `steps` (number): Number of steps to execute (0-255)
+    - `count_up` (boolean): Direction (true=forward, false=backward)
+  - `start` (boolean): Start queue if not running (default: true)
+- **Returns:** Result code:
+  - `AQE_OK` (0): Success
+  - `AQE_QUEUE_FULL` (1): Queue is full, retry later
+  - `AQE_ERROR_TICKS_TOO_LOW` (-1): Ticks value too low
+- **Example:**
+  ```javascript
+  const cmd = {
+    ticks: 10000,     // Time between steps
+    steps: 100,       // Number of steps
+    count_up: true    // Direction
+  };
+  let rc = stepper.addQueueEntry(cmd);
+  if (rc === AQE_OK) {
+    console.log('Command added successfully');
+  }
+  ```
+
+#### `isQueueEmpty()`
+Check if the command queue is empty.
+- **Returns:** `true` if queue is empty, `false` otherwise
+
+#### `isQueueFull()`
+Check if the command queue is full.
+- **Returns:** `true` if queue is full, `false` otherwise
+
+#### `isQueueRunning()`
+Check if the queue is actively processing commands.
+- **Returns:** `true` if queue is running, `false` otherwise
+
+#### `queueEntries()`
+Get the number of commands currently in the queue.
+- **Returns:** Number of queue entries (0-32)
+
+#### Constants
+- `TICKS_PER_S`: 16,000,000 (simulated 16 MHz timer)
+- `MIN_CMD_TICKS`: 640 (minimum ticks per command)
+- `AQE_OK`: 0 (success)
+- `AQE_QUEUE_FULL`: 1 (queue full)
+- `AQE_ERROR_TICKS_TOO_LOW`: -1 (ticks too low)
+
 ## Examples
 
 See the included example files:
@@ -156,6 +212,11 @@ See the included example files:
   - Stepper 2: Inverted direction (dirHighCountsUp = false)
   - Visual demonstration of both relative (move) and absolute (moveTo) positioning
   - Real-time position, speed, and acceleration display
+- **example-raw-access.html** - Raw Access mode demonstration:
+  - Direct command queue control (similar to RawAccess.ino)
+  - Generates 500 steps with acceleration profile
+  - Shows queue status (entries, running, empty)
+  - Demonstrates low-level timing control
 
 ### Running the Examples
 
@@ -165,7 +226,8 @@ node example.js
 ```
 
 **Browser:**
-Open `example.html` in a web browser.
+- Open `example.html` for dual stepper demo with high-level API
+- Open `example-raw-access.html` for Raw Access mode demo
 
 ## How It Works
 
