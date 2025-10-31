@@ -140,6 +140,7 @@ void addCommandsToQueue(int numberOfCommandsToAdd) {
 uint8_t prevQueueCount = 0;
 ulong prevMillis = 0;
 ulong currentMillis = 0;
+ulong lastStallCheck = 0;
 
 void loop() {
   if (!wasPathStarted) {
@@ -149,6 +150,16 @@ void loop() {
     prevMillis = millis();
 
     Serial.println("Started left stepper");
+  }
+
+  // Check for queue stalling every 100ms
+  currentMillis = millis();
+  if (currentMillis - lastStallCheck >= 100) {
+    lastStallCheck = currentMillis;
+    if (!leftStepper->isQueueEmpty() && !leftStepper->isQueueRunning()) {
+      Serial.println("WARNING: Queue stalled, restarting...");
+      leftStepper->addQueueEntry(NULL, true);  // Restart queue
+    }
   }
 
   if (leftStepper->queueEntries() < 20 && currentPathIndex < pathLength) {
@@ -164,8 +175,6 @@ void loop() {
   uint8_t queueEntries = leftStepper->queueEntries();
   if (prevQueueCount != queueEntries) {
     prevQueueCount = queueEntries;
-
-    currentMillis = millis();
 
     Serial.print("Queue is now at ");
     Serial.print(queueEntries);
