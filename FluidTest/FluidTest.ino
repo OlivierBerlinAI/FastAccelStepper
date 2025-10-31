@@ -108,8 +108,6 @@ void addCommandsToQueue(int numberOfCommandsToAdd) {
       return;
     }
 
-    currentPathIndex++;
-
     if (currentPathIndex >= pathLength) {
       Serial.println("Stopped adding elements early, no elements left");
 
@@ -129,19 +127,26 @@ void addCommandsToQueue(int numberOfCommandsToAdd) {
     } else {
       Serial.print("Added currentPathIndex ");
       Serial.print(currentPathIndex);
-      Serial.print(" with leftTicks ");
+      Serial.print(" with ticks ");
       Serial.print((uint16_t)tracedPath[currentPathIndex].leftTicks);
       Serial.print(" with steps ");
       Serial.println(tracedPath[currentPathIndex].leftSteps);
     }
+
+    currentPathIndex++;
   }
 }
+
+uint8_t prevQueueCount = 0;
+ulong prevMillis = 0;
+ulong currentMillis = 0;
 
 void loop() {
   if (!wasPathStarted) {
     addCommandsToQueue(30);
     leftStepper->addQueueEntry(NULL, true);
     wasPathStarted = true;
+    prevMillis = millis();
 
     Serial.println("Started left stepper");
   }
@@ -156,7 +161,24 @@ void loop() {
     Serial.println(leftStepper->queueEntries());
   }
 
-  if (currentPathIndex >= pathLength) {
+  uint8_t queueEntries = leftStepper->queueEntries();
+  if (prevQueueCount != queueEntries) {
+    prevQueueCount = queueEntries;
+
+    currentMillis = millis();
+
+    Serial.print("Queue is now at ");
+    Serial.print(queueEntries);
+    Serial.print(" at ");
+    Serial.print(currentMillis);
+    Serial.print(" with DT ");
+    Serial.print(currentMillis - prevMillis);
+    Serial.println(" ms");
+
+    prevMillis = currentMillis;
+  }
+
+  if (currentPathIndex >= pathLength && queueEntries == 0) {
     // Wait for user input
     while (!Serial.available()) {
       delay(100);
@@ -169,7 +191,8 @@ void loop() {
 
     wasPathStarted = false;
     currentPathIndex = 0;
+    prevMillis = millis();
   }
 
-  delayMicroseconds(1000);
+  // delayMicroseconds(10);
 }
