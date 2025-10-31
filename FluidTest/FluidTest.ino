@@ -104,7 +104,7 @@ void addCommandsToQueue(int numberOfCommandsToAdd) {
 
   while (true) {
     if (currentPathIndex - previousPathIndex >= numberOfCommandsToAdd) {
-      Serial.println("Added enough commands");
+      /* Serial.println("Added enough commands"); */
       return;
     }
 
@@ -125,12 +125,12 @@ void addCommandsToQueue(int numberOfCommandsToAdd) {
       Serial.println("Unable to add command to queue");
       return;
     } else {
-      Serial.print("Added currentPathIndex ");
-      Serial.print(currentPathIndex);
-      Serial.print(" with ticks ");
-      Serial.print((uint16_t)tracedPath[currentPathIndex].leftTicks);
-      Serial.print(" with steps ");
-      Serial.println(tracedPath[currentPathIndex].leftSteps);
+      /*       Serial.print("Added currentPathIndex ");
+            Serial.print(currentPathIndex);
+            Serial.print(" with ticks ");
+            Serial.print((uint16_t)tracedPath[currentPathIndex].leftTicks);
+            Serial.print(" with steps ");
+            Serial.println(tracedPath[currentPathIndex].leftSteps); */
     }
 
     currentPathIndex++;
@@ -152,31 +152,31 @@ void loop() {
   }
 
   if (leftStepper->queueEntries() < 20 && currentPathIndex < pathLength) {
-    Serial.print("Was at ");
-    Serial.print(leftStepper->queueEntries());
-    Serial.print(" queueEntries and at currentPathIndex ");
-    Serial.println(currentPathIndex);
+    /*     Serial.print("Was at ");
+        Serial.print(leftStepper->queueEntries());
+        Serial.print(" queueEntries and at currentPathIndex ");
+        Serial.println(currentPathIndex); */
     addCommandsToQueue(10);
-    Serial.print("Added 10 more commands to queue, now at ");
-    Serial.println(leftStepper->queueEntries());
+    /*     Serial.print("Added 10 more commands to queue, now at ");
+        Serial.println(leftStepper->queueEntries()); */
   }
 
   uint8_t queueEntries = leftStepper->queueEntries();
-  if (prevQueueCount != queueEntries) {
-    prevQueueCount = queueEntries;
+  /*   if (prevQueueCount != queueEntries) {
+      prevQueueCount = queueEntries;
 
-    currentMillis = millis();
+      currentMillis = millis();
 
-    Serial.print("Queue is now at ");
-    Serial.print(queueEntries);
-    Serial.print(" at ");
-    Serial.print(currentMillis);
-    Serial.print(" with DT ");
-    Serial.print(currentMillis - prevMillis);
-    Serial.println(" ms");
+      Serial.print("Queue is now at ");
+      Serial.print(queueEntries);
+      Serial.print(" at ");
+      Serial.print(currentMillis);
+      Serial.print(" with DT ");
+      Serial.print(currentMillis - prevMillis);
+      Serial.println(" ms");
 
-    prevMillis = currentMillis;
-  }
+      prevMillis = currentMillis;
+    } */
 
   if (currentPathIndex >= pathLength && queueEntries == 0) {
     // Wait for user input
