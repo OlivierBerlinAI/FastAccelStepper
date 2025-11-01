@@ -26,9 +26,28 @@
 // ============================================================================
 // VERSION INFORMATION
 // ============================================================================
-#define FIRMWARE_VERSION "v2.1.1-debug"
+#define FIRMWARE_VERSION "v2.2.0"
 #define BUILD_DATE __DATE__
 #define BUILD_TIME __TIME__
+
+// ============================================================================
+// DEBUG CONFIGURATION
+// ============================================================================
+// Set to 1 to enable detailed debug output, 0 to disable
+// When enabled, shows:
+// - loop() iteration counter (first 5 iterations)
+// - executeNextCommand() results (first 50 commands)
+// - moveTimed() return codes and actual timing values
+// Useful for troubleshooting timing issues, queue states, and execution flow
+#define DEBUG_OUTPUT 0
+
+#if DEBUG_OUTPUT
+  #define DEBUG_PRINT(...) Serial.printf(__VA_ARGS__)
+  #define DEBUG_PRINTLN(...) Serial.println(__VA_ARGS__)
+#else
+  #define DEBUG_PRINT(...)
+  #define DEBUG_PRINTLN(...)
+#endif
 
 // ============================================================================
 // CONFIGURATION - Set this differently for each microcontroller
@@ -610,13 +629,15 @@ void executeNextCommand() {
   // in startExecution(). We're just adding commands to the running queue.
   MoveTimedResultCode rc = stepper->moveTimed(steps, duration, &actual, false);
 
+#if DEBUG_OUTPUT
   // DEBUG: Print what moveTimed returns for troubleshooting
   static uint32_t debugCount = 0;
   if (debugCount < 50) {  // Print first 50 to see the pattern
-    Serial.printf("DEBUG: executeNextCommand() called, commandCount=%u, moveTimed() returned: %s (actual=%lu)\n",
-                  commandCount, toString(rc), actual);
+    DEBUG_PRINT("DEBUG: executeNextCommand() called, commandCount=%u, moveTimed() returned: %s (actual=%lu)\n",
+                commandCount, toString(rc), actual);
     debugCount++;
   }
+#endif
 
   switch (rc) {
     case MOVE_TIMED_OK:
@@ -850,12 +871,14 @@ void setup() {
 // ============================================================================
 
 void loop() {
+#if DEBUG_OUTPUT
   // DEBUG: Verify loop is running
   static uint32_t loopDebugCount = 0;
   if (loopDebugCount < 5 && motionState.state == STATE_RUNNING) {
-    Serial.printf("DEBUG: loop() iteration #%lu, state=RUNNING\n", loopDebugCount);
+    DEBUG_PRINT("DEBUG: loop() iteration #%lu, state=RUNNING\n", loopDebugCount);
     loopDebugCount++;
   }
+#endif
 
   // Always process serial commands
   processSerialCommands();
