@@ -35,10 +35,13 @@
 // PIN CONFIGURATION - Adjust for your hardware
 // ============================================================================
 
-#define STEP_PIN    26    // GPIO pin for STEP signal
-#define DIR_PIN     25    // GPIO pin for DIR signal
-#define ENABLE_PIN  27    // GPIO pin for ENABLE signal (optional)
-#define SYNC_PIN    32    // GPIO pin for hardware sync signal (INPUT)
+#define LEFT_STEP_PIN   19    // GPIO pin for STEP signal
+#define LEFT_DIR_PIN    18    // GPIO pin for DIR signal
+#define LEFT_ENABLE_PIN 23    // GPIO pin for ENABLE signal
+
+// Microstepping configuration pins
+#define MOTOR_MS1       22    // Microstepping MS1 pin
+#define MOTOR_MS2       21    // Microstepping MS2 pin
 
 // ============================================================================
 // TIMING CONSTRAINTS
@@ -150,16 +153,24 @@ bool validateCommand(const MotionCommand& cmd) {
   return true;
 }
 
-// Wait for sync signal (HIGH = start)
-void waitForSyncSignal() {
-  Serial.println("Waiting for SYNC signal...");
+// Wait for serial input to start
+void waitForSerialStart() {
+  Serial.println("Press any key and hit ENTER to start motion execution...");
+  Serial.println();
 
-  while (digitalRead(SYNC_PIN) == LOW) {
+  // Wait for any serial input
+  while (!Serial.available()) {
     delay(10);  // Poll every 10ms
   }
 
+  // Clear the serial buffer
+  while (Serial.available()) {
+    Serial.read();
+  }
+
   motionState.syncReceived = true;
-  Serial.println("SYNC signal received! Starting motion execution.");
+  Serial.println("Starting motion execution NOW!");
+  Serial.println();
 }
 
 // Print status (called periodically)
@@ -283,18 +294,23 @@ void setup() {
   Serial.println("=================================================");
   Serial.printf("Motor side: %s\n", getMotorName());
   Serial.printf("Command count: %u\n", COMMAND_COUNT);
-  Serial.printf("Step pin: %d\n", STEP_PIN);
-  Serial.printf("Dir pin: %d\n", DIR_PIN);
-  Serial.printf("Enable pin: %d\n", ENABLE_PIN);
-  Serial.printf("Sync pin: %d\n", SYNC_PIN);
+  Serial.printf("Step pin: %d\n", LEFT_STEP_PIN);
+  Serial.printf("Dir pin: %d\n", LEFT_DIR_PIN);
+  Serial.printf("Enable pin: %d\n", LEFT_ENABLE_PIN);
+  Serial.printf("Microstepping MS1: %d\n", MOTOR_MS1);
+  Serial.printf("Microstepping MS2: %d\n", MOTOR_MS2);
   Serial.println("=================================================\n");
 
-  // Configure sync pin as input
-  pinMode(SYNC_PIN, INPUT);
+  // Configure microstepping pins
+  pinMode(MOTOR_MS1, OUTPUT);
+  pinMode(MOTOR_MS2, OUTPUT);
+  digitalWrite(MOTOR_MS1, LOW);  // Set microstepping mode
+  digitalWrite(MOTOR_MS2, LOW);  // LOW/LOW = full step or 1/2 step depending on driver
+  Serial.println("Microstepping configured (MS1=LOW, MS2=LOW)");
 
   // Initialize FastAccelStepper engine
   engine.init();
-  stepper = engine.stepperConnectToPin(STEP_PIN);
+  stepper = engine.stepperConnectToPin(LEFT_STEP_PIN);
 
   if (!stepper) {
     Serial.println("ERROR: Failed to initialize stepper!");
@@ -304,9 +320,11 @@ void setup() {
   }
 
   // Configure stepper
-  stepper->setDirectionPin(DIR_PIN);
-  stepper->setEnablePin(ENABLE_PIN);
+  stepper->setDirectionPin(LEFT_DIR_PIN);
+  stepper->setEnablePin(LEFT_ENABLE_PIN);
   stepper->setAutoEnable(true);  // Auto enable/disable with motion
+
+  Serial.println("Stepper initialized successfully.");
 
   // Validate all commands
   Serial.println("Validating command list...");
@@ -326,14 +344,15 @@ void setup() {
   }
   Serial.println("All commands validated successfully.\n");
 
-  // Pre-fill queue with first pause command to prepare for sync start
+  // Pre-fill queue with first pause command to prepare for start
   Serial.println("Pre-filling queue...");
   stepper->moveTimed(0, TICKS_PER_S / 1000, NULL, false);  // 1ms pause, don't start
+  Serial.println("Queue pre-filled.\n");
 
-  // Wait for sync signal
-  waitForSyncSignal();
+  // Wait for serial input to start
+  waitForSerialStart();
 
-  // Start execution with synchronized trigger
+  // Start execution when user presses a key
   stepper->moveTimed(0, 0, NULL, true);  // Start the queue NOW
 
   Serial.println("Motion execution started!\n");
