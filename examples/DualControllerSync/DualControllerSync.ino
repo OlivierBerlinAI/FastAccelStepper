@@ -92,7 +92,9 @@ struct {
   uint32_t totalSteps;    // Total steps executed
   bool completed;         // All commands completed
   bool syncReceived;      // Sync signal received
-} motionState = {0, 0, 0, 0, false, false};
+  uint64_t startTimeUs;   // Precise start time (microseconds)
+  uint64_t endTimeUs;     // Precise end time (microseconds)
+} motionState = {0, 0, 0, 0, false, false, 0, 0};
 
 // Statistics
 struct {
@@ -193,6 +195,10 @@ void executeNextCommand() {
   if (motionState.commandIndex >= COMMAND_COUNT) {
     if (!motionState.completed) {
       motionState.completed = true;
+      // Capture precise end time
+      motionState.endTimeUs = esp_timer_get_time();
+      uint64_t actualDurationUs = motionState.endTimeUs - motionState.startTimeUs;
+
       Serial.println("=== All commands completed ===");
       Serial.printf("Total steps: %lu\n", motionState.totalSteps);
       Serial.printf("Total time: %lu us\n",
@@ -205,6 +211,16 @@ void executeNextCommand() {
       Serial.printf("Stats - Busy:%lu Empty:%lu NotReady:%lu Errors:%lu\n",
                     stats.busyCount, stats.emptyCount, stats.notReadyCount,
                     stats.errorCount);
+      Serial.println();
+      Serial.println("========================================");
+      Serial.printf("PRECISE TIMER: %llu microseconds\n", actualDurationUs);
+      Serial.printf("PRECISE TIMER: %llu.%06llu seconds\n",
+                    actualDurationUs / 1000000,
+                    actualDurationUs % 1000000);
+      Serial.println("========================================");
+      Serial.println();
+      Serial.println("** Compare this value between LEFT and RIGHT controllers **");
+      Serial.println("** Both should show EXACTLY the same PRECISE TIMER value **");
     }
     return;
   }
@@ -382,10 +398,14 @@ void setup() {
   Serial.println("Starting queue execution...");
   stepper->moveTimed(0, 0, NULL, true);  // Start the queue NOW
 
+  // Capture precise start time immediately after starting queue
+  motionState.startTimeUs = esp_timer_get_time();
+
   // Small delay for RMT to fully initialize
   delayMicroseconds(500);
 
   Serial.println("Motion execution started!\n");
+  Serial.printf("TIMER STARTED at: %llu us\n\n", motionState.startTimeUs);
 }
 
 // ============================================================================
