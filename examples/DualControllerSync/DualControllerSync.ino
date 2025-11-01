@@ -358,10 +358,10 @@ void setup() {
   }
   Serial.println("All commands validated successfully.\n");
 
-  // Pre-fill queue with first pause command to prepare for start
+  // Pre-fill queue with a longer pause to prevent queue from running dry
+  // before the first real command can be added
   Serial.println("Pre-filling queue...");
-  stepper->moveTimed(0, TICKS_PER_S / 1000, NULL,
-                     false);  // 1ms pause, don't start
+  stepper->moveTimed(0, TICKS_PER_S / 2, NULL, false);  // 500ms pause, don't start
   Serial.println("Queue pre-filled.\n");
 
   // Wait for serial input to start
@@ -369,9 +369,6 @@ void setup() {
 
   // Start execution when user presses a key
   stepper->moveTimed(0, 0, NULL, true);  // Start the queue NOW
-
-  // Allow RMT peripheral to fully initialize (reduces NotReady retries)
-  delayMicroseconds(100);
 
   Serial.println("Motion execution started!\n");
 }
