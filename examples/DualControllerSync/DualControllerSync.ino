@@ -606,6 +606,9 @@ void startExecution() {
 // ============================================================================
 
 void setup() {
+  // Increase serial buffer size to handle large command pastes
+  Serial.setRxBufferSize(8192);  // 8KB buffer for large command lists
+
   Serial.begin(115200);
   delay(1000);  // Wait for serial to initialize
 
