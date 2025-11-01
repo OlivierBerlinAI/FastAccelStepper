@@ -683,39 +683,28 @@ void startExecution() {
   }
   Serial.printf("All %u commands validated successfully.\n\n", commandCount);
 
-  // Pre-fill queue with first few commands to prevent queue from running dry
-  Serial.println("Pre-filling queue with commands...");
-  uint16_t preFillCount = (commandCount < 5) ? commandCount : 5;
-  uint16_t preFillIndex = readIndex;
+  // Add first command and start queue immediately
+  // This ensures RMT peripheral is initialized and running
+  // All subsequent commands will be added by executeNextCommand()
+  Serial.println("Starting queue with first command...");
 
-  for (uint16_t i = 0; i < preFillCount; i++) {
-    const MotionCommand& cmd = motionCommands[preFillIndex];
-    int16_t steps = getStepsForThisMotor(cmd);
-    MoveTimedResultCode rc = stepper->moveTimed(steps, cmd.duration_ticks, NULL, false);
+  const MotionCommand& firstCmd = motionCommands[readIndex];
+  int16_t firstSteps = getStepsForThisMotor(firstCmd);
 
-    // MOVE_TIMED_OK and MOVE_TIMED_EMPTY are both success (command was queued)
-    // Only warn on actual errors
-    if (rc != MOVE_TIMED_OK && rc != MOVE_TIMED_EMPTY) {
-      Serial.printf("Warning: Pre-fill command %u returned: %s\n", i, toString(rc));
-    }
-    preFillIndex = (preFillIndex + 1) % MAX_COMMANDS;
-  }
-  Serial.printf("Pre-filled %u commands.\n\n", preFillCount);
-
-  // Update readIndex and commandCount to reflect pre-filled commands
-  // Note: Do NOT increment totalCommandsExecuted here - that happens when
-  // commands actually execute in executeNextCommand()
-  for (uint16_t i = 0; i < preFillCount; i++) {
-    readIndex = (readIndex + 1) % MAX_COMMANDS;
-    commandCount--;
+  // Add first command without starting
+  MoveTimedResultCode rc = stepper->moveTimed(firstSteps, firstCmd.duration_ticks, NULL, false);
+  if (rc != MOVE_TIMED_OK && rc != MOVE_TIMED_EMPTY) {
+    Serial.printf("ERROR: Failed to add first command: %s\n", toString(rc));
+    motionState.state = STATE_READY;
+    return;
   }
 
-  // Track how many commands we've queued into FAS (for backward compatibility)
-  motionState.commandIndex = preFillCount;
-
-  // Start execution
-  Serial.println("Starting queue execution...");
+  // NOW start the queue
   stepper->moveTimed(0, 0, NULL, true);  // Start the queue NOW
+
+  // Advance ring buffer to mark first command as queued
+  readIndex = (readIndex + 1) % MAX_COMMANDS;
+  commandCount--;
 
   // Capture precise start time immediately after starting queue
   motionState.startTimeUs = esp_timer_get_time();
