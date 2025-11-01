@@ -1,8 +1,10 @@
 /*
- * DualControllerSync - Synchronized dual motor control with separate microcontrollers
+ * DualControllerSync - Synchronized dual motor control with separate
+ * microcontrollers
  *
  * This example demonstrates how to use FastAccelStepper with two independent
- * microcontrollers, each controlling one motor, using a synchronized start signal.
+ * microcontrollers, each controlling one motor, using a synchronized start
+ * signal.
  *
  * Setup:
  * - Two ESP32 microcontrollers
@@ -12,7 +14,8 @@
  * - Each controller configured as LEFT or RIGHT motor
  *
  * Hardware connections:
- * - SYNC_PIN: Connect to same sync signal on both controllers (pulled HIGH to start)
+ * - SYNC_PIN: Connect to same sync signal on both controllers (pulled HIGH to
+ * start)
  * - STEP_PIN: Connect to stepper driver STEP pin
  * - DIR_PIN: Connect to stepper driver DIR pin
  * - ENABLE_PIN (optional): Connect to stepper driver ENABLE pin
@@ -25,7 +28,7 @@
 // ============================================================================
 
 // Define which motor this controller manages
-#define MOTOR_LEFT  0
+#define MOTOR_LEFT 0
 #define MOTOR_RIGHT 1
 
 // **CHANGE THIS FOR EACH MICROCONTROLLER**
@@ -35,13 +38,13 @@
 // PIN CONFIGURATION - Adjust for your hardware
 // ============================================================================
 
-#define LEFT_STEP_PIN   19    // GPIO pin for STEP signal
-#define LEFT_DIR_PIN    18    // GPIO pin for DIR signal
-#define LEFT_ENABLE_PIN 23    // GPIO pin for ENABLE signal
+#define LEFT_STEP_PIN 19    // GPIO pin for STEP signal
+#define LEFT_DIR_PIN 18     // GPIO pin for DIR signal
+#define LEFT_ENABLE_PIN 23  // GPIO pin for ENABLE signal
 
 // Microstepping configuration pins
-#define MOTOR_MS1       22    // Microstepping MS1 pin
-#define MOTOR_MS2       21    // Microstepping MS2 pin
+#define MOTOR_MS1 22  // Microstepping MS1 pin
+#define MOTOR_MS2 21  // Microstepping MS2 pin
 
 // ============================================================================
 // TIMING CONSTRAINTS
@@ -54,10 +57,10 @@
 // ============================================================================
 
 struct MotionCommand {
-  int16_t steps_left;      // Steps for LEFT motor
-  int16_t steps_right;     // Steps for RIGHT motor
-  uint32_t duration_ticks; // Duration in timer ticks (16MHz for ESP32)
-  uint32_t duration_us;    // Duration in microseconds (for debugging/logging)
+  int16_t steps_left;       // Steps for LEFT motor
+  int16_t steps_right;      // Steps for RIGHT motor
+  uint32_t duration_ticks;  // Duration in timer ticks (16MHz for ESP32)
+  uint32_t duration_us;     // Duration in microseconds (for debugging/logging)
 };
 
 // ============================================================================
@@ -67,17 +70,9 @@ struct MotionCommand {
 // Example: Simple coordinated motion pattern
 // LEFT motor does more steps than RIGHT (differential motion)
 const MotionCommand motionCommands[] = {
-  // steps_left, steps_right, duration_ticks, duration_us
-  {   100,   50,    160000,   10000 },  // 0: 100L/50R steps in 10ms
-  {    80,   80,    128000,    8000 },  // 1: 80L/80R steps in 8ms
-  {    50,  100,    160000,   10000 },  // 2: 50L/100R steps in 10ms
-  {   120,   60,    192000,   12000 },  // 3: 120L/60R steps in 12ms
-  {     0,    0,    160000,   10000 },  // 4: Pause 10ms (synchronized)
-  {   -50,  -50,    128000,    8000 },  // 5: Reverse 50 steps in 8ms
-  {  -100,  -80,    160000,   10000 },  // 6: Reverse (differential)
-  {     0,    0,    320000,   20000 },  // 7: Pause 20ms
-  {   200,  200,    320000,   20000 },  // 8: Forward together
-  {     0,    0,     80000,    5000 },  // 9: Final pause
+    {15, 11, 1011929, 63246}, {16, 11, 419155, 26197}, {15, 10, 321629, 20102},
+    {15, 11, 271146, 16947},  {16, 11, 238884, 14930}, {15, 11, 215968, 13498},
+
 };
 
 const uint16_t COMMAND_COUNT = sizeof(motionCommands) / sizeof(MotionCommand);
@@ -87,25 +82,25 @@ const uint16_t COMMAND_COUNT = sizeof(motionCommands) / sizeof(MotionCommand);
 // ============================================================================
 
 FastAccelStepperEngine engine = FastAccelStepperEngine();
-FastAccelStepper *stepper = NULL;
+FastAccelStepper* stepper = NULL;
 
 // Motion execution state
 struct {
-  uint16_t commandIndex;      // Current command being executed
-  uint32_t drift;             // Accumulated timing drift (in ticks)
-  uint64_t totalTime;         // Total accumulated time (in ticks)
-  uint32_t totalSteps;        // Total steps executed
-  bool completed;             // All commands completed
-  bool syncReceived;          // Sync signal received
+  uint16_t commandIndex;  // Current command being executed
+  uint32_t drift;         // Accumulated timing drift (in ticks)
+  uint64_t totalTime;     // Total accumulated time (in ticks)
+  uint32_t totalSteps;    // Total steps executed
+  bool completed;         // All commands completed
+  bool syncReceived;      // Sync signal received
 } motionState = {0, 0, 0, 0, false, false};
 
 // Statistics
 struct {
-  uint32_t busyCount;         // Number of BUSY returns
-  uint32_t emptyCount;        // Number of EMPTY returns (queue ran dry)
-  uint32_t notReadyCount;     // Number of DeviceNotReady returns
-  uint32_t errorCount;        // Number of errors
-  uint32_t maxDrift;          // Maximum drift seen (ticks)
+  uint32_t busyCount;      // Number of BUSY returns
+  uint32_t emptyCount;     // Number of EMPTY returns (queue ran dry)
+  uint32_t notReadyCount;  // Number of DeviceNotReady returns
+  uint32_t errorCount;     // Number of errors
+  uint32_t maxDrift;       // Maximum drift seen (ticks)
 } stats = {0, 0, 0, 0, 0};
 
 // ============================================================================
@@ -182,17 +177,14 @@ void printStatus() {
   if (now - lastPrint >= 1000) {  // Print every 1 second
     lastPrint = now;
 
-    Serial.printf("[%s] Cmd:%u/%u Steps:%lu Time:%luus Drift:%ld Busy:%lu Empty:%lu NR:%lu Err:%lu\n",
-                  getMotorName(),
-                  motionState.commandIndex,
-                  COMMAND_COUNT,
-                  motionState.totalSteps,
-                  (uint32_t)(motionState.totalTime / 16),  // Convert ticks to us
-                  (int32_t)motionState.drift,
-                  stats.busyCount,
-                  stats.emptyCount,
-                  stats.notReadyCount,
-                  stats.errorCount);
+    Serial.printf(
+        "[%s] Cmd:%u/%u Steps:%lu Time:%luus Drift:%ld Busy:%lu Empty:%lu "
+        "NR:%lu Err:%lu\n",
+        getMotorName(), motionState.commandIndex, COMMAND_COUNT,
+        motionState.totalSteps,
+        (uint32_t)(motionState.totalTime / 16),  // Convert ticks to us
+        (int32_t)motionState.drift, stats.busyCount, stats.emptyCount,
+        stats.notReadyCount, stats.errorCount);
   }
 }
 
@@ -203,14 +195,16 @@ void executeNextCommand() {
       motionState.completed = true;
       Serial.println("=== All commands completed ===");
       Serial.printf("Total steps: %lu\n", motionState.totalSteps);
-      Serial.printf("Total time: %lu us\n", (uint32_t)(motionState.totalTime / 16));
+      Serial.printf("Total time: %lu us\n",
+                    (uint32_t)(motionState.totalTime / 16));
       Serial.printf("Final drift: %ld ticks (%ld us)\n",
                     (int32_t)motionState.drift,
                     (int32_t)motionState.drift / 16);
-      Serial.printf("Max drift: %lu ticks (%lu us)\n",
-                    stats.maxDrift, stats.maxDrift / 16);
+      Serial.printf("Max drift: %lu ticks (%lu us)\n", stats.maxDrift,
+                    stats.maxDrift / 16);
       Serial.printf("Stats - Busy:%lu Empty:%lu NotReady:%lu Errors:%lu\n",
-                    stats.busyCount, stats.emptyCount, stats.notReadyCount, stats.errorCount);
+                    stats.busyCount, stats.emptyCount, stats.notReadyCount,
+                    stats.errorCount);
     }
     return;
   }
@@ -242,7 +236,8 @@ void executeNextCommand() {
 
     case MOVE_TIMED_EMPTY:
       // Queue ran dry, but command was added
-      Serial.printf("WARNING: Queue empty at command %u\n", motionState.commandIndex);
+      Serial.printf("WARNING: Queue empty at command %u\n",
+                    motionState.commandIndex);
       stats.emptyCount++;
 
       motionState.drift = duration - actual;
@@ -275,8 +270,9 @@ void executeNextCommand() {
       break;
 
     case MoveTimedResultCode::ErrorTicksTooLow:
-      Serial.printf("ERROR: Command %u ticks too low (steps=%d, duration=%lu)\n",
-                    motionState.commandIndex, steps, cmd.duration_ticks);
+      Serial.printf(
+          "ERROR: Command %u ticks too low (steps=%d, duration=%lu)\n",
+          motionState.commandIndex, steps, cmd.duration_ticks);
       stats.errorCount++;
       motionState.commandIndex++;  // Skip this command
       break;
@@ -314,7 +310,8 @@ void setup() {
   pinMode(MOTOR_MS1, OUTPUT);
   pinMode(MOTOR_MS2, OUTPUT);
   digitalWrite(MOTOR_MS1, LOW);  // Set microstepping mode
-  digitalWrite(MOTOR_MS2, LOW);  // LOW/LOW = full step or 1/2 step depending on driver
+  digitalWrite(MOTOR_MS2,
+               LOW);  // LOW/LOW = full step or 1/2 step depending on driver
   Serial.println("Microstepping configured (MS1=LOW, MS2=LOW)");
 
   // Initialize FastAccelStepper engine
@@ -363,7 +360,8 @@ void setup() {
 
   // Pre-fill queue with first pause command to prepare for start
   Serial.println("Pre-filling queue...");
-  stepper->moveTimed(0, TICKS_PER_S / 1000, NULL, false);  // 1ms pause, don't start
+  stepper->moveTimed(0, TICKS_PER_S / 1000, NULL,
+                     false);  // 1ms pause, don't start
   Serial.println("Queue pre-filled.\n");
 
   // Wait for serial input to start
