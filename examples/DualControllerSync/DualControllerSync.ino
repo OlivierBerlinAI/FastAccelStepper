@@ -89,17 +89,25 @@ const MotionCommand defaultCommands[] = {
 FastAccelStepperEngine engine = FastAccelStepperEngine();
 FastAccelStepper* stepper = NULL;
 
+// Execution states
+enum ExecutionState {
+  STATE_IDLE,           // Waiting for commands
+  STATE_READY,          // Commands loaded, waiting for START
+  STATE_RUNNING,        // Executing commands
+  STATE_COMPLETED       // Execution finished, waiting for restart
+};
+
 // Motion execution state
 struct {
+  ExecutionState state;   // Current execution state
   uint16_t commandIndex;  // Current command being executed
   uint32_t drift;         // Accumulated timing drift (in ticks)
   uint64_t totalTime;     // Total accumulated time (in ticks)
   uint32_t totalSteps;    // Total steps executed
   bool completed;         // All commands completed
-  bool syncReceived;      // Sync signal received
   uint64_t startTimeUs;   // Precise start time (microseconds)
   uint64_t endTimeUs;     // Precise end time (microseconds)
-} motionState = {0, 0, 0, 0, false, false, 0, 0};
+} motionState = {STATE_IDLE, 0, 0, 0, 0, false, 0, 0};
 
 // Statistics
 struct {
@@ -219,51 +227,91 @@ bool addCommandFromSerial(String line) {
   return true;
 }
 
-// Wait for serial commands and START signal
-void waitForSerialCommands() {
+// Process serial commands (non-blocking)
+void processSerialCommands() {
+  if (!Serial.available()) {
+    return;
+  }
+
+  String line = readSerialLine();
+  line.trim();
+
+  if (line.length() == 0) {
+    return;
+  }
+
+  // Handle commands based on current state
+  if (line.startsWith("ADD,")) {
+    if (motionState.state == STATE_RUNNING) {
+      Serial.println("ERROR: Cannot add commands while executing. Wait for completion or send STOP.");
+    } else {
+      if (addCommandFromSerial(line)) {
+        motionState.state = STATE_READY;
+      }
+    }
+  } else if (line.equalsIgnoreCase("CLEAR")) {
+    if (motionState.state == STATE_RUNNING) {
+      Serial.println("ERROR: Cannot clear commands while executing. Wait for completion or send STOP.");
+    } else {
+      COMMAND_COUNT = 0;
+      motionState.state = STATE_IDLE;
+      // Reset statistics
+      stats.busyCount = 0;
+      stats.emptyCount = 0;
+      stats.notReadyCount = 0;
+      stats.errorCount = 0;
+      stats.maxDrift = 0;
+      Serial.println("Command buffer cleared. Ready for new commands.");
+    }
+  } else if (line.equalsIgnoreCase("STATUS")) {
+    Serial.printf("Commands loaded: %u / %u\n", COMMAND_COUNT, MAX_COMMANDS);
+    Serial.printf("State: ");
+    switch (motionState.state) {
+      case STATE_IDLE: Serial.println("IDLE (waiting for commands)"); break;
+      case STATE_READY: Serial.println("READY (send START to execute)"); break;
+      case STATE_RUNNING: Serial.println("RUNNING (executing commands)"); break;
+      case STATE_COMPLETED: Serial.println("COMPLETED (send CLEAR for new sequence)"); break;
+    }
+  } else if (line.equalsIgnoreCase("START")) {
+    if (motionState.state == STATE_RUNNING) {
+      Serial.println("ERROR: Already running!");
+    } else if (COMMAND_COUNT == 0) {
+      Serial.println("ERROR: No commands loaded. Add commands first.");
+    } else if (motionState.state == STATE_COMPLETED) {
+      Serial.println("ERROR: Previous execution completed. Send CLEAR first, then add new commands.");
+    } else {
+      Serial.printf("Starting execution with %u commands...\n", COMMAND_COUNT);
+      startExecution();
+    }
+  } else if (line.equalsIgnoreCase("STOP")) {
+    if (motionState.state == STATE_RUNNING) {
+      stepper->forceStopAndNewPosition(stepper->getCurrentPosition());
+      motionState.state = STATE_COMPLETED;
+      motionState.completed = true;
+      Serial.println("Execution stopped!");
+    } else {
+      Serial.println("Not currently running.");
+    }
+  } else if (line.equalsIgnoreCase("HELP")) {
+    printHelp();
+  } else {
+    Serial.printf("Unknown command: %s (type HELP for commands)\n", line.c_str());
+  }
+}
+
+// Print help message
+void printHelp() {
   Serial.println("\n========================================");
   Serial.println("  Serial Command Mode");
   Serial.println("========================================");
   Serial.println("Commands:");
   Serial.println("  ADD,steps_left,steps_right,duration_ticks,duration_us");
   Serial.println("  CLEAR              - Clear all commands");
-  Serial.println("  STATUS             - Show command count");
+  Serial.println("  STATUS             - Show status and command count");
   Serial.println("  START              - Begin execution");
+  Serial.println("  STOP               - Stop current execution");
+  Serial.println("  HELP               - Show this help");
   Serial.println("========================================\n");
-
-  bool waitingForStart = true;
-
-  while (waitingForStart) {
-    if (Serial.available()) {
-      String line = readSerialLine();
-      line.trim();
-
-      if (line.length() == 0) {
-        continue;
-      }
-
-      // Check for commands
-      if (line.startsWith("ADD,")) {
-        addCommandFromSerial(line);
-      } else if (line.equalsIgnoreCase("CLEAR")) {
-        COMMAND_COUNT = 0;
-        Serial.println("Command buffer cleared.");
-      } else if (line.equalsIgnoreCase("STATUS")) {
-        Serial.printf("Commands loaded: %u / %u\n", COMMAND_COUNT, MAX_COMMANDS);
-      } else if (line.equalsIgnoreCase("START")) {
-        if (COMMAND_COUNT == 0) {
-          Serial.println("ERROR: No commands loaded. Add commands first.");
-        } else {
-          Serial.printf("Starting execution with %u commands...\n", COMMAND_COUNT);
-          motionState.syncReceived = true;
-          waitingForStart = false;
-        }
-      } else {
-        Serial.printf("Unknown command: %s\n", line.c_str());
-      }
-    }
-    delay(10);
-  }
 }
 
 // Print status (called periodically)
@@ -290,11 +338,13 @@ void executeNextCommand() {
   if (motionState.commandIndex >= COMMAND_COUNT) {
     if (!motionState.completed) {
       motionState.completed = true;
+      motionState.state = STATE_COMPLETED;
+
       // Capture precise end time
       motionState.endTimeUs = esp_timer_get_time();
       uint64_t actualDurationUs = motionState.endTimeUs - motionState.startTimeUs;
 
-      Serial.println("=== All commands completed ===");
+      Serial.println("\n=== All commands completed ===");
       Serial.printf("Total steps: %lu\n", motionState.totalSteps);
       Serial.printf("Total time: %lu us\n",
                     (uint32_t)(motionState.totalTime / 16));
@@ -316,6 +366,8 @@ void executeNextCommand() {
       Serial.println();
       Serial.println("** Compare this value between LEFT and RIGHT controllers **");
       Serial.println("** Both should show EXACTLY the same PRECISE TIMER value **");
+      Serial.println();
+      Serial.println("Send CLEAR to load new commands, or STATUS to check state.");
     }
     return;
   }
@@ -397,6 +449,71 @@ void executeNextCommand() {
   }
 }
 
+// Start execution (validate, pre-fill, and start queue)
+void startExecution() {
+  // Reset execution state
+  motionState.commandIndex = 0;
+  motionState.drift = 0;
+  motionState.totalTime = 0;
+  motionState.totalSteps = 0;
+  motionState.completed = false;
+  motionState.startTimeUs = 0;
+  motionState.endTimeUs = 0;
+
+  // Reset statistics
+  stats.busyCount = 0;
+  stats.emptyCount = 0;
+  stats.notReadyCount = 0;
+  stats.errorCount = 0;
+  stats.maxDrift = 0;
+
+  // Validate all commands
+  Serial.println("\nValidating command list...");
+  bool allValid = true;
+  for (uint16_t i = 0; i < COMMAND_COUNT; i++) {
+    if (!validateCommand(motionCommands[i])) {
+      Serial.printf("ERROR: Command %u failed validation\n", i);
+      allValid = false;
+    }
+  }
+
+  if (!allValid) {
+    Serial.println("ERROR: Command validation failed!");
+    motionState.state = STATE_READY;  // Stay in ready state
+    return;
+  }
+  Serial.printf("All %u commands validated successfully.\n\n", COMMAND_COUNT);
+
+  // Pre-fill queue with first few commands to prevent queue from running dry
+  Serial.println("Pre-filling queue with commands...");
+  uint16_t preFillCount = (COMMAND_COUNT < 5) ? COMMAND_COUNT : 5;
+  for (uint16_t i = 0; i < preFillCount; i++) {
+    const MotionCommand& cmd = motionCommands[i];
+    int16_t steps = getStepsForThisMotor(cmd);
+    MoveTimedResultCode rc = stepper->moveTimed(steps, cmd.duration_ticks, NULL, false);
+    if (rc != MOVE_TIMED_OK) {
+      Serial.printf("Warning: Pre-fill command %u returned: %s\n", i, toString(rc));
+    }
+  }
+  Serial.printf("Pre-filled %u commands.\n\n", preFillCount);
+
+  // Update state to reflect pre-filled commands
+  motionState.commandIndex = preFillCount;
+
+  // Start execution
+  Serial.println("Starting queue execution...");
+  stepper->moveTimed(0, 0, NULL, true);  // Start the queue NOW
+
+  // Capture precise start time immediately after starting queue
+  motionState.startTimeUs = esp_timer_get_time();
+
+  Serial.println("Motion execution started!\n");
+  Serial.printf("TIMER STARTED at: %llu us\n\n", motionState.startTimeUs);
+
+  // Change state to running
+  motionState.state = STATE_RUNNING;
+}
+
 // ============================================================================
 // ARDUINO SETUP
 // ============================================================================
@@ -451,56 +568,10 @@ void setup() {
   delay(100);  // 100ms delay for driver to wake up
   Serial.println("Driver stabilization delay complete.\n");
 
-  // Wait for serial commands and START signal
-  waitForSerialCommands();
-
-  // Validate all commands after receiving them
-  Serial.println("\nValidating command list...");
-  bool allValid = true;
-  for (uint16_t i = 0; i < COMMAND_COUNT; i++) {
-    if (!validateCommand(motionCommands[i])) {
-      Serial.printf("ERROR: Command %u failed validation\n", i);
-      allValid = false;
-    }
-  }
-
-  if (!allValid) {
-    Serial.println("ERROR: Command validation failed!");
-    while (1) {
-      delay(1000);
-    }
-  }
-  Serial.printf("All %u commands validated successfully.\n\n", COMMAND_COUNT);
-
-  // Pre-fill queue with first few commands to prevent queue from running dry
-  // This is critical for RMT - it needs commands ready before starting
-  Serial.println("Pre-filling queue with commands...");
-  uint16_t preFillCount = (COMMAND_COUNT < 5) ? COMMAND_COUNT : 5;  // Pre-fill up to 5 commands
-  for (uint16_t i = 0; i < preFillCount; i++) {
-    const MotionCommand& cmd = motionCommands[i];
-    int16_t steps = getStepsForThisMotor(cmd);
-    MoveTimedResultCode rc = stepper->moveTimed(steps, cmd.duration_ticks, NULL, false);
-    if (rc != MOVE_TIMED_OK) {
-      Serial.printf("Warning: Pre-fill command %u returned: %s\n", i, toString(rc));
-    }
-  }
-  Serial.printf("Pre-filled %u commands.\n\n", preFillCount);
-
-  // Update state to reflect pre-filled commands
-  motionState.commandIndex = preFillCount;
-
-  // Start execution
-  Serial.println("Starting queue execution...");
-  stepper->moveTimed(0, 0, NULL, true);  // Start the queue NOW
-
-  // Capture precise start time immediately after starting queue
-  motionState.startTimeUs = esp_timer_get_time();
-
-  // Small delay for RMT to fully initialize
-  delayMicroseconds(500);
-
-  Serial.println("Motion execution started!\n");
-  Serial.printf("TIMER STARTED at: %llu us\n\n", motionState.startTimeUs);
+  // Print help and wait for commands
+  printHelp();
+  Serial.println("Ready! Send commands to begin.");
+  Serial.println("Type HELP for command list.\n");
 }
 
 // ============================================================================
@@ -508,12 +579,15 @@ void setup() {
 // ============================================================================
 
 void loop() {
-  // Execute commands
-  executeNextCommand();
+  // Always process serial commands
+  processSerialCommands();
 
-  // Print periodic status
-  printStatus();
+  // Execute commands if in RUNNING state
+  if (motionState.state == STATE_RUNNING) {
+    executeNextCommand();
+    printStatus();
+  }
 
-  // Optional: small delay to prevent tight loop (adjust as needed)
-  // delayMicroseconds(100);
+  // Small delay to prevent tight loop
+  delay(1);
 }
