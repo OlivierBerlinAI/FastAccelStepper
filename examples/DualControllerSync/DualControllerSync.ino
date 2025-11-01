@@ -41,6 +41,12 @@
 #define SYNC_PIN    32    // GPIO pin for hardware sync signal (INPUT)
 
 // ============================================================================
+// TIMING CONSTRAINTS
+// ============================================================================
+
+#define MIN_CMD_TICKS 3200  // ESP32 minimum command duration (200 microseconds)
+
+// ============================================================================
 // MOTION COMMAND FORMAT
 // ============================================================================
 
@@ -122,8 +128,6 @@ const char* getMotorName() {
 
 // Validate a command
 bool validateCommand(const MotionCommand& cmd) {
-  const uint32_t MIN_CMD_TICKS = 3200;  // ESP32 minimum
-
   int16_t steps = getStepsForThisMotor(cmd);
 
   // Check minimum duration
