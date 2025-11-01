@@ -200,6 +200,7 @@ String readSerialLine() {
 int parseArrayInitializers(String line) {
   int commandsAdded = 0;
   int searchStart = 0;
+  bool incompleteCommandDetected = false;
 
   while (searchStart < line.length()) {
     if (commandCount >= MAX_COMMANDS) {
@@ -214,55 +215,96 @@ int parseArrayInitializers(String line) {
       break;  // No more commands
     }
 
-    // Find closing brace
+    // CRITICAL: Find closing brace BEFORE attempting any parsing
     int closeBrace = line.indexOf('}', openBrace);
     if (closeBrace == -1) {
-      break;  // Malformed command
+      // Incomplete command at buffer boundary - STOP PARSING IMMEDIATELY
+      incompleteCommandDetected = true;
+      Serial.printf("WARNING: Incomplete command detected at position %d - stopping parse\n", openBrace);
+      Serial.println("Hint: Data may have been cut off. This is normal for large pastes.");
+      break;
     }
 
+    // Only proceed with parsing if we have BOTH braces
     // Extract content between braces
     String content = line.substring(openBrace + 1, closeBrace);
     content.trim();
 
-    // Parse comma-separated values
+    // Validate content is not empty
+    if (content.length() == 0) {
+      Serial.printf("WARNING: Empty command at position %d - skipping\n", openBrace);
+      searchStart = closeBrace + 1;
+      continue;
+    }
+
+    // Parse comma-separated values - ALL 3 commas must be present
     int commaIndex1 = content.indexOf(',');
     int commaIndex2 = content.indexOf(',', commaIndex1 + 1);
     int commaIndex3 = content.indexOf(',', commaIndex2 + 1);
 
-    if (commaIndex1 != -1 && commaIndex2 != -1 && commaIndex3 != -1) {
-      String s_left = content.substring(0, commaIndex1);
-      String s_right = content.substring(commaIndex1 + 1, commaIndex2);
-      String s_ticks = content.substring(commaIndex2 + 1, commaIndex3);
-      String s_us = content.substring(commaIndex3 + 1);
-
-      s_left.trim();
-      s_right.trim();
-      s_ticks.trim();
-      s_us.trim();
-
-      int16_t steps_left = s_left.toInt();
-      int16_t steps_right = s_right.toInt();
-      uint32_t duration_ticks = s_ticks.toInt();
-      uint32_t duration_us = s_us.toInt();
-
-      // Add to ring buffer at writeIndex
-      motionCommands[writeIndex].steps_left = steps_left;
-      motionCommands[writeIndex].steps_right = steps_right;
-      motionCommands[writeIndex].duration_ticks = duration_ticks;
-      motionCommands[writeIndex].duration_us = duration_us;
-
-      Serial.printf("Added command #%u: L=%d R=%d ticks=%lu us=%lu (buffer: %u/%u)\n",
-                    totalCommandsExecuted + commandCount, steps_left, steps_right,
-                    duration_ticks, duration_us, commandCount + 1, MAX_COMMANDS);
-
-      // Advance writeIndex and increment count
-      writeIndex = (writeIndex + 1) % MAX_COMMANDS;
-      commandCount++;
-      commandsAdded++;
+    // VALIDATION: All 3 commas must exist for 4 values
+    if (commaIndex1 == -1 || commaIndex2 == -1 || commaIndex3 == -1) {
+      Serial.printf("ERROR: Invalid command format at position %d (missing commas) - skipping\n", openBrace);
+      Serial.printf("Content: {%s}\n", content.c_str());
+      searchStart = closeBrace + 1;
+      continue;
     }
+
+    // Extract the 4 fields
+    String s_left = content.substring(0, commaIndex1);
+    String s_right = content.substring(commaIndex1 + 1, commaIndex2);
+    String s_ticks = content.substring(commaIndex2 + 1, commaIndex3);
+    String s_us = content.substring(commaIndex3 + 1);
+
+    s_left.trim();
+    s_right.trim();
+    s_ticks.trim();
+    s_us.trim();
+
+    // Validate fields are not empty
+    if (s_left.length() == 0 || s_right.length() == 0 ||
+        s_ticks.length() == 0 || s_us.length() == 0) {
+      Serial.printf("ERROR: Empty field(s) in command at position %d - skipping\n", openBrace);
+      searchStart = closeBrace + 1;
+      continue;
+    }
+
+    // Parse values
+    int16_t steps_left = s_left.toInt();
+    int16_t steps_right = s_right.toInt();
+    uint32_t duration_ticks = s_ticks.toInt();
+    uint32_t duration_us = s_us.toInt();
+
+    // Validate parsed values (duration_ticks must be non-zero)
+    if (duration_ticks == 0) {
+      Serial.printf("ERROR: Invalid duration_ticks=0 at position %d - skipping\n", openBrace);
+      Serial.printf("Content: {%s}\n", content.c_str());
+      searchStart = closeBrace + 1;
+      continue;
+    }
+
+    // ALL VALIDATION PASSED - Add to ring buffer at writeIndex
+    motionCommands[writeIndex].steps_left = steps_left;
+    motionCommands[writeIndex].steps_right = steps_right;
+    motionCommands[writeIndex].duration_ticks = duration_ticks;
+    motionCommands[writeIndex].duration_us = duration_us;
+
+    Serial.printf("Added command #%u: L=%d R=%d ticks=%lu us=%lu (buffer: %u/%u)\n",
+                  totalCommandsExecuted + commandCount, steps_left, steps_right,
+                  duration_ticks, duration_us, commandCount + 1, MAX_COMMANDS);
+
+    // Advance writeIndex and increment count
+    writeIndex = (writeIndex + 1) % MAX_COMMANDS;
+    commandCount++;
+    commandsAdded++;
 
     // Move search position past this command
     searchStart = closeBrace + 1;
+  }
+
+  // Report if we stopped due to incomplete data
+  if (incompleteCommandDetected && commandsAdded > 0) {
+    Serial.printf("INFO: Successfully parsed %d complete commands before incomplete data\n", commandsAdded);
   }
 
   return commandsAdded;
