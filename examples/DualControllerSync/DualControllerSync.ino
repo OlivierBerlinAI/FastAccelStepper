@@ -690,7 +690,10 @@ void startExecution() {
     const MotionCommand& cmd = motionCommands[preFillIndex];
     int16_t steps = getStepsForThisMotor(cmd);
     MoveTimedResultCode rc = stepper->moveTimed(steps, cmd.duration_ticks, NULL, false);
-    if (rc != MOVE_TIMED_OK) {
+
+    // MOVE_TIMED_OK and MOVE_TIMED_EMPTY are both success (command was queued)
+    // Only warn on actual errors
+    if (rc != MOVE_TIMED_OK && rc != MOVE_TIMED_EMPTY) {
       Serial.printf("Warning: Pre-fill command %u returned: %s\n", i, toString(rc));
     }
     preFillIndex = (preFillIndex + 1) % MAX_COMMANDS;
@@ -698,12 +701,15 @@ void startExecution() {
   Serial.printf("Pre-filled %u commands.\n\n", preFillCount);
 
   // Update readIndex and commandCount to reflect pre-filled commands
+  // Note: Do NOT increment totalCommandsExecuted here - that happens when
+  // commands actually execute in executeNextCommand()
   for (uint16_t i = 0; i < preFillCount; i++) {
     readIndex = (readIndex + 1) % MAX_COMMANDS;
     commandCount--;
-    totalCommandsExecuted++;
-    motionState.commandIndex++;
   }
+
+  // Track how many commands we've queued into FAS (for backward compatibility)
+  motionState.commandIndex = preFillCount;
 
   // Start execution
   Serial.println("Starting queue execution...");
