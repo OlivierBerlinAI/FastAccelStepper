@@ -70,8 +70,16 @@ struct MotionCommand {
 // Maximum number of commands that can be stored
 #define MAX_COMMANDS 1000
 
-// Command buffer (dynamically filled via serial or pre-defined)
+// Command ring buffer (dynamically filled via serial or pre-defined)
 MotionCommand motionCommands[MAX_COMMANDS];
+
+// Ring buffer tracking
+uint16_t writeIndex = 0;      // Where to write next command
+uint16_t readIndex = 0;       // Where to read next command for execution
+uint16_t commandCount = 0;    // Number of commands currently in buffer
+uint32_t totalCommandsExecuted = 0;  // Total commands executed (for stats)
+
+// Legacy variable for backward compatibility (deprecated)
 uint16_t COMMAND_COUNT = 0;
 
 // Example commands (comment out when using serial input)
@@ -194,8 +202,9 @@ int parseArrayInitializers(String line) {
   int searchStart = 0;
 
   while (searchStart < line.length()) {
-    if (COMMAND_COUNT >= MAX_COMMANDS) {
-      Serial.println("ERROR: Command buffer full!");
+    if (commandCount >= MAX_COMMANDS) {
+      Serial.printf("ERROR: Command buffer full! (%u/%u commands)\n",
+                    commandCount, MAX_COMMANDS);
       break;
     }
 
@@ -236,16 +245,20 @@ int parseArrayInitializers(String line) {
       uint32_t duration_ticks = s_ticks.toInt();
       uint32_t duration_us = s_us.toInt();
 
-      // Add to buffer
-      motionCommands[COMMAND_COUNT].steps_left = steps_left;
-      motionCommands[COMMAND_COUNT].steps_right = steps_right;
-      motionCommands[COMMAND_COUNT].duration_ticks = duration_ticks;
-      motionCommands[COMMAND_COUNT].duration_us = duration_us;
-      COMMAND_COUNT++;
-      commandsAdded++;
+      // Add to ring buffer at writeIndex
+      motionCommands[writeIndex].steps_left = steps_left;
+      motionCommands[writeIndex].steps_right = steps_right;
+      motionCommands[writeIndex].duration_ticks = duration_ticks;
+      motionCommands[writeIndex].duration_us = duration_us;
 
-      Serial.printf("Added command #%u: L=%d R=%d ticks=%lu us=%lu\n",
-                    COMMAND_COUNT - 1, steps_left, steps_right, duration_ticks, duration_us);
+      Serial.printf("Added command #%u: L=%d R=%d ticks=%lu us=%lu (buffer: %u/%u)\n",
+                    totalCommandsExecuted + commandCount, steps_left, steps_right,
+                    duration_ticks, duration_us, commandCount + 1, MAX_COMMANDS);
+
+      // Advance writeIndex and increment count
+      writeIndex = (writeIndex + 1) % MAX_COMMANDS;
+      commandCount++;
+      commandsAdded++;
     }
 
     // Move search position past this command
@@ -258,8 +271,9 @@ int parseArrayInitializers(String line) {
 // Parse and add a command from serial
 // Format: ADD,steps_left,steps_right,duration_ticks,duration_us
 bool addCommandFromSerial(String line) {
-  if (COMMAND_COUNT >= MAX_COMMANDS) {
-    Serial.println("ERROR: Command buffer full!");
+  if (commandCount >= MAX_COMMANDS) {
+    Serial.printf("ERROR: Command buffer full! (%u/%u commands)\n",
+                  commandCount, MAX_COMMANDS);
     return false;
   }
 
@@ -284,15 +298,20 @@ bool addCommandFromSerial(String line) {
   uint32_t duration_ticks = line.substring(commaIndex3 + 1, commaIndex4).toInt();
   uint32_t duration_us = line.substring(commaIndex4 + 1).toInt();
 
-  // Add to buffer
-  motionCommands[COMMAND_COUNT].steps_left = steps_left;
-  motionCommands[COMMAND_COUNT].steps_right = steps_right;
-  motionCommands[COMMAND_COUNT].duration_ticks = duration_ticks;
-  motionCommands[COMMAND_COUNT].duration_us = duration_us;
-  COMMAND_COUNT++;
+  // Add to ring buffer at writeIndex
+  motionCommands[writeIndex].steps_left = steps_left;
+  motionCommands[writeIndex].steps_right = steps_right;
+  motionCommands[writeIndex].duration_ticks = duration_ticks;
+  motionCommands[writeIndex].duration_us = duration_us;
 
-  Serial.printf("Added command #%u: L=%d R=%d ticks=%lu us=%lu\n",
-                COMMAND_COUNT - 1, steps_left, steps_right, duration_ticks, duration_us);
+  Serial.printf("Added command #%u: L=%d R=%d ticks=%lu us=%lu (buffer: %u/%u)\n",
+                totalCommandsExecuted + commandCount, steps_left, steps_right,
+                duration_ticks, duration_us, commandCount + 1, MAX_COMMANDS);
+
+  // Advance writeIndex and increment count
+  writeIndex = (writeIndex + 1) % MAX_COMMANDS;
+  commandCount++;
+
   return true;
 }
 
@@ -313,20 +332,17 @@ void processSerialCommands() {
 
   // Try to parse as C-style array initializer first: {val1, val2, val3, val4},
   if (line.indexOf('{') != -1) {
-    if (motionState.state == STATE_RUNNING) {
-      Serial.println("ERROR: Cannot add commands while executing. Wait for completion or send STOP.");
-    } else {
-      int added = parseArrayInitializers(line);
-      if (added > 0) {
-        Serial.printf("Total commands added: %d\n", added);
+    int added = parseArrayInitializers(line);
+    if (added > 0) {
+      Serial.printf("Total commands added: %d (buffer: %u/%u)\n",
+                    added, commandCount, MAX_COMMANDS);
+      if (motionState.state == STATE_IDLE) {
         motionState.state = STATE_READY;
       }
     }
   } else if (line.startsWith("ADD,")) {
-    if (motionState.state == STATE_RUNNING) {
-      Serial.println("ERROR: Cannot add commands while executing. Wait for completion or send STOP.");
-    } else {
-      if (addCommandFromSerial(line)) {
+    if (addCommandFromSerial(line)) {
+      if (motionState.state == STATE_IDLE) {
         motionState.state = STATE_READY;
       }
     }
@@ -334,7 +350,12 @@ void processSerialCommands() {
     if (motionState.state == STATE_RUNNING) {
       Serial.println("ERROR: Cannot clear commands while executing. Wait for completion or send STOP.");
     } else {
-      COMMAND_COUNT = 0;
+      // Reset ring buffer
+      writeIndex = 0;
+      readIndex = 0;
+      commandCount = 0;
+      totalCommandsExecuted = 0;
+      COMMAND_COUNT = 0;  // Legacy
       motionState.state = STATE_IDLE;
       // Reset statistics
       stats.busyCount = 0;
@@ -345,7 +366,8 @@ void processSerialCommands() {
       Serial.println("Command buffer cleared. Ready for new commands.");
     }
   } else if (line.equalsIgnoreCase("STATUS")) {
-    Serial.printf("Commands loaded: %u / %u\n", COMMAND_COUNT, MAX_COMMANDS);
+    Serial.printf("Commands queued: %u / %u\n", commandCount, MAX_COMMANDS);
+    Serial.printf("Commands executed: %u\n", totalCommandsExecuted);
     Serial.printf("State: ");
     switch (motionState.state) {
       case STATE_IDLE: Serial.println("IDLE (waiting for commands)"); break;
@@ -356,12 +378,12 @@ void processSerialCommands() {
   } else if (line.equalsIgnoreCase("START")) {
     if (motionState.state == STATE_RUNNING) {
       Serial.println("ERROR: Already running!");
-    } else if (COMMAND_COUNT == 0) {
+    } else if (commandCount == 0) {
       Serial.println("ERROR: No commands loaded. Add commands first.");
     } else if (motionState.state == STATE_COMPLETED) {
       Serial.println("ERROR: Previous execution completed. Send CLEAR first, then add new commands.");
     } else {
-      Serial.printf("Starting execution with %u commands...\n", COMMAND_COUNT);
+      Serial.printf("Starting execution with %u commands...\n", commandCount);
       startExecution();
     }
   } else if (line.equalsIgnoreCase("STOP")) {
@@ -373,6 +395,21 @@ void processSerialCommands() {
     } else {
       Serial.println("Not currently running.");
     }
+  } else if (line.equalsIgnoreCase("STATS")) {
+    // Return JSON stats for buffer status (used for polling)
+    Serial.print("{");
+    Serial.printf("\"bufferSize\":%u,", MAX_COMMANDS);
+    Serial.printf("\"commandsQueued\":%u,", commandCount);
+    Serial.printf("\"commandsFree\":%u,", MAX_COMMANDS - commandCount);
+    Serial.printf("\"commandsExecuted\":%u,", totalCommandsExecuted);
+    Serial.printf("\"state\":\"%s\",",
+                  motionState.state == STATE_IDLE ? "IDLE" :
+                  motionState.state == STATE_READY ? "READY" :
+                  motionState.state == STATE_RUNNING ? "RUNNING" : "COMPLETED");
+    Serial.printf("\"queueEmpty\":%s,", commandCount == 0 ? "true" : "false");
+    Serial.printf("\"totalSteps\":%lu,", motionState.totalSteps);
+    Serial.printf("\"drift\":%ld", (int32_t)motionState.drift);
+    Serial.println("}");
   } else if (line.equalsIgnoreCase("HELP")) {
     printHelp();
   } else {
@@ -390,6 +427,7 @@ void printHelp() {
   Serial.println("  {steps_left, steps_right, duration_ticks, duration_us},");
   Serial.println("  CLEAR              - Clear all commands");
   Serial.println("  STATUS             - Show status and command count");
+  Serial.println("  STATS              - Show buffer stats as JSON");
   Serial.println("  START              - Begin execution");
   Serial.println("  STOP               - Stop current execution");
   Serial.println("  HELP               - Show this help");
@@ -398,6 +436,9 @@ void printHelp() {
   Serial.println("  ADD,100,50,1600000,100000");
   Serial.println("  {100, 50, 1600000, 100000},");
   Serial.println("  {-50, -25, 800000, 50000},");
+  Serial.println("========================================");
+  Serial.println("Note: Commands can be added while motor is RUNNING");
+  Serial.println("Use STATS to poll buffer capacity for streaming");
   Serial.println("========================================\n");
 }
 
@@ -410,9 +451,9 @@ void printStatus() {
     lastPrint = now;
 
     Serial.printf(
-        "[%s] Cmd:%u/%u Steps:%lu Time:%luus Drift:%ld Busy:%lu Empty:%lu "
-        "NR:%lu Err:%lu\n",
-        getMotorName(), motionState.commandIndex, COMMAND_COUNT,
+        "[%s] Executed:%u Queued:%u/%u Steps:%lu Time:%luus Drift:%ld "
+        "Busy:%lu Empty:%lu NR:%lu Err:%lu\n",
+        getMotorName(), totalCommandsExecuted, commandCount, MAX_COMMANDS,
         motionState.totalSteps,
         (uint32_t)(motionState.totalTime / 16),  // Convert ticks to us
         (int32_t)motionState.drift, stats.busyCount, stats.emptyCount,
@@ -420,9 +461,10 @@ void printStatus() {
   }
 }
 
-// Execute one command from the list
+// Execute one command from the ring buffer
 void executeNextCommand() {
-  if (motionState.commandIndex >= COMMAND_COUNT) {
+  // Check if ring buffer is empty
+  if (commandCount == 0) {
     if (!motionState.completed) {
       motionState.completed = true;
       motionState.state = STATE_COMPLETED;
@@ -432,6 +474,7 @@ void executeNextCommand() {
       uint64_t actualDurationUs = motionState.endTimeUs - motionState.startTimeUs;
 
       Serial.println("\n=== All commands completed ===");
+      Serial.printf("Total commands executed: %u\n", totalCommandsExecuted);
       Serial.printf("Total steps: %lu\n", motionState.totalSteps);
       Serial.printf("Total time: %lu us\n",
                     (uint32_t)(motionState.totalTime / 16));
@@ -459,8 +502,8 @@ void executeNextCommand() {
     return;
   }
 
-  // Get current command
-  const MotionCommand& cmd = motionCommands[motionState.commandIndex];
+  // Get current command from ring buffer at readIndex
+  const MotionCommand& cmd = motionCommands[readIndex];
   int16_t steps = getStepsForThisMotor(cmd);
 
   // Apply drift compensation
@@ -472,11 +515,16 @@ void executeNextCommand() {
 
   switch (rc) {
     case MOVE_TIMED_OK:
-      // Command successfully queued
+      // Command successfully queued - advance ring buffer
       motionState.drift = duration - actual;
       motionState.totalTime += actual;
       motionState.totalSteps += abs(steps);
-      motionState.commandIndex++;
+
+      // Advance readIndex and decrement count
+      readIndex = (readIndex + 1) % MAX_COMMANDS;
+      commandCount--;
+      totalCommandsExecuted++;
+      motionState.commandIndex++;  // For backward compatibility
 
       // Track max drift
       if (abs((int32_t)motionState.drift) > stats.maxDrift) {
@@ -485,15 +533,19 @@ void executeNextCommand() {
       break;
 
     case MOVE_TIMED_EMPTY:
-      // Queue ran dry, but command was added
-      Serial.printf("WARNING: Queue empty at command %u\n",
-                    motionState.commandIndex);
+      // Queue ran dry, but command was added - advance ring buffer
+      Serial.printf("WARNING: Queue empty at command %u\n", totalCommandsExecuted);
       stats.emptyCount++;
 
       motionState.drift = duration - actual;
       motionState.totalTime += actual;
       motionState.totalSteps += abs(steps);
-      motionState.commandIndex++;
+
+      // Advance readIndex and decrement count
+      readIndex = (readIndex + 1) % MAX_COMMANDS;
+      commandCount--;
+      totalCommandsExecuted++;
+      motionState.commandIndex++;  // For backward compatibility
 
       if (abs((int32_t)motionState.drift) > stats.maxDrift) {
         stats.maxDrift = abs((int32_t)motionState.drift);
@@ -514,24 +566,38 @@ void executeNextCommand() {
 
     case MOVE_TIMED_TOO_LARGE_ERROR:
       Serial.printf("ERROR: Command %u too large (steps=%d, duration=%lu)\n",
-                    motionState.commandIndex, steps, cmd.duration_ticks);
+                    totalCommandsExecuted, steps, cmd.duration_ticks);
       stats.errorCount++;
-      motionState.commandIndex++;  // Skip this command
+
+      // Skip this command - advance ring buffer
+      readIndex = (readIndex + 1) % MAX_COMMANDS;
+      commandCount--;
+      totalCommandsExecuted++;
+      motionState.commandIndex++;  // For backward compatibility
       break;
 
     case MoveTimedResultCode::ErrorTicksTooLow:
-      Serial.printf(
-          "ERROR: Command %u ticks too low (steps=%d, duration=%lu)\n",
-          motionState.commandIndex, steps, cmd.duration_ticks);
+      Serial.printf("ERROR: Command %u ticks too low (steps=%d, duration=%lu)\n",
+                    totalCommandsExecuted, steps, cmd.duration_ticks);
       stats.errorCount++;
-      motionState.commandIndex++;  // Skip this command
+
+      // Skip this command - advance ring buffer
+      readIndex = (readIndex + 1) % MAX_COMMANDS;
+      commandCount--;
+      totalCommandsExecuted++;
+      motionState.commandIndex++;  // For backward compatibility
       break;
 
     default:
       Serial.printf("ERROR: Command %u failed with code: %s\n",
-                    motionState.commandIndex, toString(rc));
+                    totalCommandsExecuted, toString(rc));
       stats.errorCount++;
-      motionState.commandIndex++;  // Skip this command
+
+      // Skip this command - advance ring buffer
+      readIndex = (readIndex + 1) % MAX_COMMANDS;
+      commandCount--;
+      totalCommandsExecuted++;
+      motionState.commandIndex++;  // For backward compatibility
       break;
   }
 }
@@ -554,14 +620,16 @@ void startExecution() {
   stats.errorCount = 0;
   stats.maxDrift = 0;
 
-  // Validate all commands
+  // Validate commands currently in ring buffer
   Serial.println("\nValidating command list...");
   bool allValid = true;
-  for (uint16_t i = 0; i < COMMAND_COUNT; i++) {
-    if (!validateCommand(motionCommands[i])) {
+  uint16_t validateIndex = readIndex;
+  for (uint16_t i = 0; i < commandCount; i++) {
+    if (!validateCommand(motionCommands[validateIndex])) {
       Serial.printf("ERROR: Command %u failed validation\n", i);
       allValid = false;
     }
+    validateIndex = (validateIndex + 1) % MAX_COMMANDS;
   }
 
   if (!allValid) {
@@ -569,23 +637,31 @@ void startExecution() {
     motionState.state = STATE_READY;  // Stay in ready state
     return;
   }
-  Serial.printf("All %u commands validated successfully.\n\n", COMMAND_COUNT);
+  Serial.printf("All %u commands validated successfully.\n\n", commandCount);
 
   // Pre-fill queue with first few commands to prevent queue from running dry
   Serial.println("Pre-filling queue with commands...");
-  uint16_t preFillCount = (COMMAND_COUNT < 5) ? COMMAND_COUNT : 5;
+  uint16_t preFillCount = (commandCount < 5) ? commandCount : 5;
+  uint16_t preFillIndex = readIndex;
+
   for (uint16_t i = 0; i < preFillCount; i++) {
-    const MotionCommand& cmd = motionCommands[i];
+    const MotionCommand& cmd = motionCommands[preFillIndex];
     int16_t steps = getStepsForThisMotor(cmd);
     MoveTimedResultCode rc = stepper->moveTimed(steps, cmd.duration_ticks, NULL, false);
     if (rc != MOVE_TIMED_OK) {
       Serial.printf("Warning: Pre-fill command %u returned: %s\n", i, toString(rc));
     }
+    preFillIndex = (preFillIndex + 1) % MAX_COMMANDS;
   }
   Serial.printf("Pre-filled %u commands.\n\n", preFillCount);
 
-  // Update state to reflect pre-filled commands
-  motionState.commandIndex = preFillCount;
+  // Update readIndex and commandCount to reflect pre-filled commands
+  for (uint16_t i = 0; i < preFillCount; i++) {
+    readIndex = (readIndex + 1) % MAX_COMMANDS;
+    commandCount--;
+    totalCommandsExecuted++;
+    motionState.commandIndex++;
+  }
 
   // Start execution
   Serial.println("Starting queue execution...");
@@ -596,6 +672,8 @@ void startExecution() {
 
   Serial.println("Motion execution started!\n");
   Serial.printf("TIMER STARTED at: %llu us\n\n", motionState.startTimeUs);
+  Serial.printf("Ring buffer: %u commands remaining (can add more while running)\n\n",
+                commandCount);
 
   // Change state to running
   motionState.state = STATE_RUNNING;
@@ -616,7 +694,7 @@ void setup() {
   Serial.println("FastAccelStepper - Dual Controller Sync Example");
   Serial.println("=================================================");
   Serial.printf("Motor side: %s\n", getMotorName());
-  Serial.printf("Command count: %u\n", COMMAND_COUNT);
+  Serial.printf("Ring buffer capacity: %u commands\n", MAX_COMMANDS);
   Serial.printf("Step pin: %d\n", LEFT_STEP_PIN);
   Serial.printf("Dir pin: %d\n", LEFT_DIR_PIN);
   Serial.printf("Enable pin: %d\n", LEFT_ENABLE_PIN);
