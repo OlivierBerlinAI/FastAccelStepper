@@ -188,64 +188,71 @@ String readSerialLine() {
 
 // Parse C-style array initializer
 // Format: {steps_left, steps_right, duration_ticks, duration_us},
-bool parseArrayInitializer(String line) {
-  if (COMMAND_COUNT >= MAX_COMMANDS) {
-    Serial.println("ERROR: Command buffer full!");
-    return false;
+// Can handle multiple commands on one line
+int parseArrayInitializers(String line) {
+  int commandsAdded = 0;
+  int searchStart = 0;
+
+  while (searchStart < line.length()) {
+    if (COMMAND_COUNT >= MAX_COMMANDS) {
+      Serial.println("ERROR: Command buffer full!");
+      break;
+    }
+
+    // Find opening brace
+    int openBrace = line.indexOf('{', searchStart);
+    if (openBrace == -1) {
+      break;  // No more commands
+    }
+
+    // Find closing brace
+    int closeBrace = line.indexOf('}', openBrace);
+    if (closeBrace == -1) {
+      break;  // Malformed command
+    }
+
+    // Extract content between braces
+    String content = line.substring(openBrace + 1, closeBrace);
+    content.trim();
+
+    // Parse comma-separated values
+    int commaIndex1 = content.indexOf(',');
+    int commaIndex2 = content.indexOf(',', commaIndex1 + 1);
+    int commaIndex3 = content.indexOf(',', commaIndex2 + 1);
+
+    if (commaIndex1 != -1 && commaIndex2 != -1 && commaIndex3 != -1) {
+      String s_left = content.substring(0, commaIndex1);
+      String s_right = content.substring(commaIndex1 + 1, commaIndex2);
+      String s_ticks = content.substring(commaIndex2 + 1, commaIndex3);
+      String s_us = content.substring(commaIndex3 + 1);
+
+      s_left.trim();
+      s_right.trim();
+      s_ticks.trim();
+      s_us.trim();
+
+      int16_t steps_left = s_left.toInt();
+      int16_t steps_right = s_right.toInt();
+      uint32_t duration_ticks = s_ticks.toInt();
+      uint32_t duration_us = s_us.toInt();
+
+      // Add to buffer
+      motionCommands[COMMAND_COUNT].steps_left = steps_left;
+      motionCommands[COMMAND_COUNT].steps_right = steps_right;
+      motionCommands[COMMAND_COUNT].duration_ticks = duration_ticks;
+      motionCommands[COMMAND_COUNT].duration_us = duration_us;
+      COMMAND_COUNT++;
+      commandsAdded++;
+
+      Serial.printf("Added command #%u: L=%d R=%d ticks=%lu us=%lu\n",
+                    COMMAND_COUNT - 1, steps_left, steps_right, duration_ticks, duration_us);
+    }
+
+    // Move search position past this command
+    searchStart = closeBrace + 1;
   }
 
-  // Remove whitespace
-  line.trim();
-
-  // Check for opening brace
-  if (!line.startsWith("{")) {
-    return false;
-  }
-
-  // Find closing brace
-  int closeBrace = line.indexOf('}');
-  if (closeBrace == -1) {
-    return false;
-  }
-
-  // Extract content between braces
-  String content = line.substring(1, closeBrace);
-  content.trim();
-
-  // Parse comma-separated values
-  int commaIndex1 = content.indexOf(',');
-  int commaIndex2 = content.indexOf(',', commaIndex1 + 1);
-  int commaIndex3 = content.indexOf(',', commaIndex2 + 1);
-
-  if (commaIndex1 == -1 || commaIndex2 == -1 || commaIndex3 == -1) {
-    return false;
-  }
-
-  String s_left = content.substring(0, commaIndex1);
-  String s_right = content.substring(commaIndex1 + 1, commaIndex2);
-  String s_ticks = content.substring(commaIndex2 + 1, commaIndex3);
-  String s_us = content.substring(commaIndex3 + 1);
-
-  s_left.trim();
-  s_right.trim();
-  s_ticks.trim();
-  s_us.trim();
-
-  int16_t steps_left = s_left.toInt();
-  int16_t steps_right = s_right.toInt();
-  uint32_t duration_ticks = s_ticks.toInt();
-  uint32_t duration_us = s_us.toInt();
-
-  // Add to buffer
-  motionCommands[COMMAND_COUNT].steps_left = steps_left;
-  motionCommands[COMMAND_COUNT].steps_right = steps_right;
-  motionCommands[COMMAND_COUNT].duration_ticks = duration_ticks;
-  motionCommands[COMMAND_COUNT].duration_us = duration_us;
-  COMMAND_COUNT++;
-
-  Serial.printf("Added command #%u: L=%d R=%d ticks=%lu us=%lu\n",
-                COMMAND_COUNT - 1, steps_left, steps_right, duration_ticks, duration_us);
-  return true;
+  return commandsAdded;
 }
 
 // Parse and add a command from serial
@@ -305,11 +312,13 @@ void processSerialCommands() {
   // Handle commands based on current state
 
   // Try to parse as C-style array initializer first: {val1, val2, val3, val4},
-  if (line.startsWith("{")) {
+  if (line.indexOf('{') != -1) {
     if (motionState.state == STATE_RUNNING) {
       Serial.println("ERROR: Cannot add commands while executing. Wait for completion or send STOP.");
     } else {
-      if (parseArrayInitializer(line)) {
+      int added = parseArrayInitializers(line);
+      if (added > 0) {
+        Serial.printf("Total commands added: %d\n", added);
         motionState.state = STATE_READY;
       }
     }
