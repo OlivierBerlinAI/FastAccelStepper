@@ -26,7 +26,7 @@
 // ============================================================================
 // VERSION INFORMATION
 // ============================================================================
-#define FIRMWARE_VERSION "v2.2.0"
+#define FIRMWARE_VERSION "v2.2.1"
 #define BUILD_DATE __DATE__
 #define BUILD_TIME __TIME__
 
@@ -342,9 +342,11 @@ int parseArrayInitializers(String line) {
     motionCommands[writeIndex].duration_ticks = duration_ticks;
     motionCommands[writeIndex].duration_us = duration_us;
 
-    Serial.printf("Added command #%u: L=%d R=%d ticks=%lu us=%lu (buffer: %u/%u)\n",
-                  totalCommandsExecuted + commandCount, steps_left, steps_right,
-                  duration_ticks, duration_us, commandCount + 1, MAX_COMMANDS);
+#if DEBUG_OUTPUT
+    DEBUG_PRINT("Added command #%u: L=%d R=%d ticks=%lu us=%lu (buffer: %u/%u)\n",
+                totalCommandsExecuted + commandCount, steps_left, steps_right,
+                duration_ticks, duration_us, commandCount + 1, MAX_COMMANDS);
+#endif
 
     // Advance writeIndex and increment count
     writeIndex = (writeIndex + 1) % MAX_COMMANDS;
@@ -399,9 +401,11 @@ bool addCommandFromSerial(String line) {
   motionCommands[writeIndex].duration_ticks = duration_ticks;
   motionCommands[writeIndex].duration_us = duration_us;
 
-  Serial.printf("Added command #%u: L=%d R=%d ticks=%lu us=%lu (buffer: %u/%u)\n",
-                totalCommandsExecuted + commandCount, steps_left, steps_right,
-                duration_ticks, duration_us, commandCount + 1, MAX_COMMANDS);
+#if DEBUG_OUTPUT
+  DEBUG_PRINT("Added command #%u: L=%d R=%d ticks=%lu us=%lu (buffer: %u/%u)\n",
+              totalCommandsExecuted + commandCount, steps_left, steps_right,
+              duration_ticks, duration_us, commandCount + 1, MAX_COMMANDS);
+#endif
 
   // Advance writeIndex and increment count
   writeIndex = (writeIndex + 1) % MAX_COMMANDS;
@@ -448,8 +452,10 @@ void processCommand(String line) {
   if (line.indexOf('{') != -1) {
     int added = parseArrayInitializers(line);
     if (added > 0) {
-      Serial.printf("Total commands added: %d (buffer: %u/%u)\n",
-                    added, commandCount, MAX_COMMANDS);
+#if DEBUG_OUTPUT
+      DEBUG_PRINT("Total commands added: %d (buffer: %u/%u)\n",
+                  added, commandCount, MAX_COMMANDS);
+#endif
       if (motionState.state == STATE_IDLE) {
         motionState.state = STATE_READY;
       }
