@@ -103,9 +103,10 @@ struct {
 struct {
   uint32_t busyCount;         // Number of BUSY returns
   uint32_t emptyCount;        // Number of EMPTY returns (queue ran dry)
+  uint32_t notReadyCount;     // Number of DeviceNotReady returns
   uint32_t errorCount;        // Number of errors
   uint32_t maxDrift;          // Maximum drift seen (ticks)
-} stats = {0, 0, 0, 0};
+} stats = {0, 0, 0, 0, 0};
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -181,7 +182,7 @@ void printStatus() {
   if (now - lastPrint >= 1000) {  // Print every 1 second
     lastPrint = now;
 
-    Serial.printf("[%s] Cmd:%u/%u Steps:%lu Time:%luus Drift:%ld Busy:%lu Empty:%lu Err:%lu\n",
+    Serial.printf("[%s] Cmd:%u/%u Steps:%lu Time:%luus Drift:%ld Busy:%lu Empty:%lu NR:%lu Err:%lu\n",
                   getMotorName(),
                   motionState.commandIndex,
                   COMMAND_COUNT,
@@ -190,6 +191,7 @@ void printStatus() {
                   (int32_t)motionState.drift,
                   stats.busyCount,
                   stats.emptyCount,
+                  stats.notReadyCount,
                   stats.errorCount);
   }
 }
@@ -207,8 +209,8 @@ void executeNextCommand() {
                     (int32_t)motionState.drift / 16);
       Serial.printf("Max drift: %lu ticks (%lu us)\n",
                     stats.maxDrift, stats.maxDrift / 16);
-      Serial.printf("Stats - Busy:%lu Empty:%lu Errors:%lu\n",
-                    stats.busyCount, stats.emptyCount, stats.errorCount);
+      Serial.printf("Stats - Busy:%lu Empty:%lu NotReady:%lu Errors:%lu\n",
+                    stats.busyCount, stats.emptyCount, stats.notReadyCount, stats.errorCount);
     }
     return;
   }
@@ -256,6 +258,13 @@ void executeNextCommand() {
     case MOVE_TIMED_BUSY:
       // Queue doesn't have room, retry next loop
       stats.busyCount++;
+      break;
+
+    case MoveTimedResultCode::DeviceNotReady:
+      // RMT peripheral still initializing, retry next loop
+      // This is normal right after starting the queue
+      stats.notReadyCount++;
+      delayMicroseconds(10);  // Small delay to let peripheral initialize
       break;
 
     case MOVE_TIMED_TOO_LARGE_ERROR:
