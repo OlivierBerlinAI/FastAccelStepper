@@ -26,7 +26,7 @@
 // ============================================================================
 // VERSION INFORMATION
 // ============================================================================
-#define FIRMWARE_VERSION "v2.1.0-debug"
+#define FIRMWARE_VERSION "v2.1.1-debug"
 #define BUILD_DATE __DATE__
 #define BUILD_TIME __TIME__
 
@@ -186,17 +186,43 @@ bool validateCommand(const MotionCommand& cmd) {
 // Read a line from serial (blocks until newline received)
 String readSerialLine() {
   String line = "";
+  uint32_t startTime = millis();
+  const uint32_t timeout = 5000; // 5 second timeout to avoid infinite loops
+
   while (true) {
     if (Serial.available()) {
       char c = Serial.read();
       if (c == '\n' || c == '\r') {
         if (line.length() > 0) {
+          // Consume any trailing \r or \n characters
+          delayMicroseconds(1000); // Wait for any trailing chars
+          while (Serial.available()) {
+            char next = Serial.peek();
+            if (next == '\n' || next == '\r') {
+              Serial.read(); // Consume it
+            } else {
+              break; // Stop if we hit actual data
+            }
+          }
           return line;
         }
+        // Ignore empty lines (stray \r or \n)
+        // Don't get stuck - just continue
       } else {
         line += c;
+        startTime = millis(); // Reset timeout when we get data
       }
     }
+
+    // Timeout protection - don't block forever
+    if (millis() - startTime > timeout) {
+      if (line.length() > 0) {
+        return line; // Return partial line if we have something
+      }
+      // Return empty string to avoid infinite loop
+      return "";
+    }
+
     // Use delayMicroseconds instead of delay to avoid interfering with RMT
     delayMicroseconds(100);
   }
@@ -365,18 +391,37 @@ bool addCommandFromSerial(String line) {
   return true;
 }
 
-// Process serial commands (non-blocking)
+// Process serial commands (truly non-blocking)
 void processSerialCommands() {
-  if (!Serial.available()) {
-    return;
-  }
+  static String inputBuffer = "";
 
-  String line = readSerialLine();
-  line.trim();
+  // Read available characters without blocking
+  while (Serial.available()) {
+    char c = Serial.read();
 
-  if (line.length() == 0) {
-    return;
+    if (c == '\n' || c == '\r') {
+      // End of line - process if we have data
+      if (inputBuffer.length() > 0) {
+        String line = inputBuffer;
+        inputBuffer = "";  // Clear buffer for next command
+        line.trim();
+
+        if (line.length() == 0) {
+          continue; // Skip empty lines
+        }
+
+        // Process the command (moved processing code here)
+        processCommand(line);
+      }
+      // Ignore empty lines (trailing \r\n)
+    } else {
+      inputBuffer += c;
+    }
   }
+}
+
+// Process a single command line
+void processCommand(String line) {
 
   // Handle commands based on current state
 
