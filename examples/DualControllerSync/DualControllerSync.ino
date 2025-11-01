@@ -190,7 +190,8 @@ String readSerialLine() {
         line += c;
       }
     }
-    delay(1);
+    // Use delayMicroseconds instead of delay to avoid interfering with RMT
+    delayMicroseconds(100);
   }
 }
 
@@ -559,9 +560,9 @@ void executeNextCommand() {
 
   // DEBUG: Print what moveTimed returns for troubleshooting
   static uint32_t debugCount = 0;
-  if (debugCount < 10) {  // Only print first 10 to avoid spam
-    Serial.printf("DEBUG: moveTimed() for cmd #%u returned: %s (actual=%lu)\n",
-                  totalCommandsExecuted, toString(rc), actual);
+  if (debugCount < 50) {  // Print first 50 to see the pattern
+    Serial.printf("DEBUG: executeNextCommand() called, commandCount=%u, moveTimed() returned: %s (actual=%lu)\n",
+                  commandCount, toString(rc), actual);
     debugCount++;
   }
 
@@ -794,6 +795,13 @@ void setup() {
 // ============================================================================
 
 void loop() {
+  // DEBUG: Verify loop is running
+  static uint32_t loopDebugCount = 0;
+  if (loopDebugCount < 5 && motionState.state == STATE_RUNNING) {
+    Serial.printf("DEBUG: loop() iteration #%lu, state=RUNNING\n", loopDebugCount);
+    loopDebugCount++;
+  }
+
   // Always process serial commands
   processSerialCommands();
 
@@ -803,6 +811,6 @@ void loop() {
     printStatus();
   }
 
-  // Small delay to prevent tight loop
-  delay(1);
+  // No delay - run as fast as possible to keep FAS queue fed
+  // delay() can interfere with RMT peripheral on ESP32
 }
