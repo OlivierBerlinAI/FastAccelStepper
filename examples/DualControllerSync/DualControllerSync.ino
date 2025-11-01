@@ -358,17 +358,32 @@ void setup() {
   }
   Serial.println("All commands validated successfully.\n");
 
-  // Pre-fill queue with a longer pause to prevent queue from running dry
-  // before the first real command can be added
-  Serial.println("Pre-filling queue...");
-  stepper->moveTimed(0, TICKS_PER_S / 2, NULL, false);  // 500ms pause, don't start
-  Serial.println("Queue pre-filled.\n");
-
-  // Wait for serial input to start
+  // Wait for serial input before pre-filling
   waitForSerialStart();
 
-  // Start execution when user presses a key
+  // Pre-fill queue with first few commands to prevent queue from running dry
+  // This is critical for RMT - it needs commands ready before starting
+  Serial.println("Pre-filling queue with commands...");
+  uint16_t preFillCount = min(5, COMMAND_COUNT);  // Pre-fill up to 5 commands
+  for (uint16_t i = 0; i < preFillCount; i++) {
+    const MotionCommand& cmd = motionCommands[i];
+    int16_t steps = getStepsForThisMotor(cmd);
+    MoveTimedResultCode rc = stepper->moveTimed(steps, cmd.duration_ticks, NULL, false);
+    if (rc != MOVE_TIMED_OK) {
+      Serial.printf("Warning: Pre-fill command %u returned: %s\n", i, toString(rc));
+    }
+  }
+  Serial.printf("Pre-filled %u commands.\n\n", preFillCount);
+
+  // Update state to reflect pre-filled commands
+  motionState.commandIndex = preFillCount;
+
+  // Start execution
+  Serial.println("Starting queue execution...");
   stepper->moveTimed(0, 0, NULL, true);  // Start the queue NOW
+
+  // Small delay for RMT to fully initialize
+  delayMicroseconds(500);
 
   Serial.println("Motion execution started!\n");
 }
