@@ -322,9 +322,17 @@ void setup() {
   // Configure stepper
   stepper->setDirectionPin(LEFT_DIR_PIN);
   stepper->setEnablePin(LEFT_ENABLE_PIN);
-  stepper->setAutoEnable(true);  // Auto enable/disable with motion
+  stepper->setAutoEnable(false);  // Manual enable control for better timing
 
   Serial.println("Stepper initialized successfully.");
+
+  // Manually enable the stepper driver
+  stepper->enableOutputs();
+  Serial.println("Stepper driver enabled.");
+
+  // Wait for stepper driver to stabilize (important!)
+  delay(100);  // 100ms delay for driver to wake up
+  Serial.println("Driver stabilization delay complete.");
 
   // Validate all commands
   Serial.println("Validating command list...");
@@ -351,6 +359,9 @@ void setup() {
 
   // Wait for serial input to start
   waitForSerialStart();
+
+  // Small delay before starting to ensure everything is ready
+  delay(50);
 
   // Start execution when user presses a key
   stepper->moveTimed(0, 0, NULL, true);  // Start the queue NOW
