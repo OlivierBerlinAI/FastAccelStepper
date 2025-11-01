@@ -364,7 +364,7 @@ void setup() {
   // Pre-fill queue with first few commands to prevent queue from running dry
   // This is critical for RMT - it needs commands ready before starting
   Serial.println("Pre-filling queue with commands...");
-  uint16_t preFillCount = min(5, COMMAND_COUNT);  // Pre-fill up to 5 commands
+  uint16_t preFillCount = (COMMAND_COUNT < 5) ? COMMAND_COUNT : 5;  // Pre-fill up to 5 commands
   for (uint16_t i = 0; i < preFillCount; i++) {
     const MotionCommand& cmd = motionCommands[i];
     int16_t steps = getStepsForThisMotor(cmd);
