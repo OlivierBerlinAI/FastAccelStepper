@@ -24,6 +24,13 @@
 #include <FastAccelStepper.h>
 
 // ============================================================================
+// VERSION INFORMATION
+// ============================================================================
+#define FIRMWARE_VERSION "v2.1.0-debug"
+#define BUILD_DATE __DATE__
+#define BUILD_TIME __TIME__
+
+// ============================================================================
 // CONFIGURATION - Set this differently for each microcontroller
 // ============================================================================
 
@@ -741,6 +748,9 @@ void setup() {
   Serial.println("\n\n=================================================");
   Serial.println("FastAccelStepper - Dual Controller Sync Example");
   Serial.println("=================================================");
+  Serial.printf("Firmware Version: %s\n", FIRMWARE_VERSION);
+  Serial.printf("Build Date: %s %s\n", BUILD_DATE, BUILD_TIME);
+  Serial.println("-------------------------------------------------");
   Serial.printf("Motor side: %s\n", getMotorName());
   Serial.printf("Ring buffer capacity: %u commands\n", MAX_COMMANDS);
   Serial.printf("Step pin: %d\n", LEFT_STEP_PIN);
