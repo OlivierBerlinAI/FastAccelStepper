@@ -369,11 +369,11 @@ void setup() {
   // Wait for serial input to start
   waitForSerialStart();
 
-  // Small delay before starting to ensure everything is ready
-  delay(50);
-
   // Start execution when user presses a key
   stepper->moveTimed(0, 0, NULL, true);  // Start the queue NOW
+
+  // Allow RMT peripheral to fully initialize (reduces NotReady retries)
+  delayMicroseconds(100);
 
   Serial.println("Motion execution started!\n");
 }
