@@ -553,7 +553,9 @@ void executeNextCommand() {
   uint32_t actual = 0;
 
   // Execute the timed move
-  MoveTimedResultCode rc = stepper->moveTimed(steps, duration, &actual, true);
+  // IMPORTANT: Use start_immediately=false because queue was already started
+  // in startExecution(). We're just adding commands to the running queue.
+  MoveTimedResultCode rc = stepper->moveTimed(steps, duration, &actual, false);
 
   switch (rc) {
     case MOVE_TIMED_OK:
