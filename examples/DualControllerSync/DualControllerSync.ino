@@ -557,6 +557,14 @@ void executeNextCommand() {
   // in startExecution(). We're just adding commands to the running queue.
   MoveTimedResultCode rc = stepper->moveTimed(steps, duration, &actual, false);
 
+  // DEBUG: Print what moveTimed returns for troubleshooting
+  static uint32_t debugCount = 0;
+  if (debugCount < 10) {  // Only print first 10 to avoid spam
+    Serial.printf("DEBUG: moveTimed() for cmd #%u returned: %s (actual=%lu)\n",
+                  totalCommandsExecuted, toString(rc), actual);
+    debugCount++;
+  }
+
   switch (rc) {
     case MOVE_TIMED_OK:
       // Command successfully queued - advance ring buffer
